@@ -1,0 +1,83 @@
+{
+  "domain": "veritaschain.com",
+  "chaincode": {
+    "name": "veritasorder",
+    "version": "1.0",
+    "sequence": 1,
+    "path": "../../chaincode/order"
+  },
+  "orderer": {
+    "name": "orderer0",
+    "mspId": "OrdererMSP",
+    "folderName": "orderer",
+    "caName": "ca-orderer",
+    "caPort": 11054,
+    "port": 7050,
+    "adminPort": 7053
+  },
+  "organizations": [
+    {
+      "name": "VoltRide",
+      "mspId": "VoltRideMSP",
+      "folderName": "voltride",
+      "caName": "ca-voltride",
+      "caPort": 7054,
+      "domain": "voltride.veritaschain.com",
+      "peers": [
+        { "name": "peerbattery", "port": 11051, "ccPort": 11052 },
+        { "name": "peermotor",   "port": 12051, "ccPort": 12052 },
+        { "name": "peerchassis", "port": 13051, "ccPort": 13052 }
+      ]
+    },
+    {
+      "name": "Battery",
+      "mspId": "BatteryMSP",
+      "folderName": "battery",
+      "caName": "ca-battery",
+      "caPort": 8054,
+      "domain": "battery.veritaschain.com",
+      "peers": [
+        { "name": "peer0", "port": 7051, "ccPort": 7052 }
+      ]
+    },
+    {
+      "name": "Motor",
+      "mspId": "MotorMSP",
+      "folderName": "motor",
+      "caName": "ca-motor",
+      "caPort": 9054,
+      "domain": "motor.veritaschain.com",
+      "peers": [
+        { "name": "peer0", "port": 9051, "ccPort": 9052 }
+      ]
+    },
+    {
+      "name": "Chassis",
+      "mspId": "ChassisMSP",
+      "folderName": "chassis",
+      "caName": "ca-chassis",
+      "caPort": 10054,
+      "domain": "chassis.veritaschain.com",
+      "peers": [
+        { "name": "peer0", "port": 10051, "ccPort": 10052 }
+      ]
+    }
+  ],
+  "channels": [
+    {
+      "name": "voltride-battery",
+      "manufacturer": { "mspId": "VoltRideMSP", "peerName": "peerbattery" },
+      "supplier":      { "mspId": "BatteryMSP",  "peerName": "peer0" }
+    },
+    {
+      "name": "voltride-motor",
+      "manufacturer": { "mspId": "VoltRideMSP", "peerName": "peermotor" },
+      "supplier":      { "mspId": "MotorMSP",    "peerName": "peer0" }
+    },
+    {
+      "name": "voltride-chassis",
+      "manufacturer": { "mspId": "VoltRideMSP", "peerName": "peerchassis" },
+      "supplier":      { "mspId": "ChassisMSP",  "peerName": "peer0" }
+    }
+  ]
+}

@@ -1,6 +1,16 @@
-# Ledger data — never commit, rebuilds on deploy
+# Ledger data and runtime crypto — never commit, rebuild on deploy
 ledger/
 prototype/ledger/
+network/ledger/
+network/organizations/peerOrganizations/
+network/organizations/ordererOrganizations/
+network/organizations/fabric-ca/*/msp/
+network/organizations/fabric-ca/*/tls-cert.pem
+network/organizations/fabric-ca/*/IssuerPublicKey
+network/organizations/fabric-ca/*/IssuerRevocationPublicKey
+network/organizations/fabric-ca/*/ca-cert.pem
+network/organizations/fabric-ca/*/fabric-ca-server.db
+network/channel-artifacts/
 
 # Go build artifacts
 chaincode/*/vendor/.cache

@@ -1,174 +1,103 @@
 #!/bin/bash
 set -e
 
+# Universal chaincode deployment script.
+# Works for ANY channel and org pair — no hardcoding.
+# Usage:
+#   ./deployChaincode.sh <channelName> \
+#     <mfgMspId> <mfgDomain> <mfgPeerName> <mfgPeerPort> \
+#     <splrMspId> <splrDomain> <splrPeerName> <splrPeerPort>
+
 NETWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CC_NAME=veritasorder
-CC_VERSION=1.0
-CC_SEQUENCE=1
-CC_SRC_PATH=${NETWORK_DIR}/../../chaincode/order
 export FABRIC_CFG_PATH=${NETWORK_DIR}/config
 
-ORDERER_CA=${NETWORK_DIR}/organizations/ordererOrganizations/veritaschain.com/orderers/orderer0.veritaschain.com/tls/ca.crt
+CHANNEL_NAME=$1
+MFG_MSP=$2  MFG_DOMAIN=$3  MFG_PEER=$4  MFG_PORT=$5
+SPLR_MSP=$6  SPLR_DOMAIN=$7  SPLR_PEER=$8  SPLR_PORT=$9
 
-BATTERY_TLS=${NETWORK_DIR}/organizations/peerOrganizations/battery.veritaschain.com/peers/peer0.battery.veritaschain.com/tls/ca.crt
-MOTOR_TLS=${NETWORK_DIR}/organizations/peerOrganizations/motor.veritaschain.com/peers/peer0.motor.veritaschain.com/tls/ca.crt
-CHASSIS_TLS=${NETWORK_DIR}/organizations/peerOrganizations/chassis.veritaschain.com/peers/peer0.chassis.veritaschain.com/tls/ca.crt
-VR_BATTERY_TLS=${NETWORK_DIR}/organizations/peerOrganizations/voltride.veritaschain.com/peers/peerbattery.voltride.veritaschain.com/tls/ca.crt
-VR_MOTOR_TLS=${NETWORK_DIR}/organizations/peerOrganizations/voltride.veritaschain.com/peers/peermotor.voltride.veritaschain.com/tls/ca.crt
-VR_CHASSIS_TLS=${NETWORK_DIR}/organizations/peerOrganizations/voltride.veritaschain.com/peers/peerchassis.voltride.veritaschain.com/tls/ca.crt
+if [[ -z "$CHANNEL_NAME" || -z "$MFG_MSP" || -z "$SPLR_MSP" ]]; then
+  echo "Usage: $0 <channelName> <mfgMsp> <mfgDomain> <mfgPeerName> <mfgPeerPort> <splrMsp> <splrDomain> <splrPeerName> <splrPeerPort>"
+  exit 1
+fi
 
-setVoltrideBatteryPeer() {
-  export CORE_PEER_LOCALMSPID=VoltRideMSP
+# Read chaincode params from platform.json
+CC_NAME=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['chaincode']['name'])")
+CC_VERSION=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['chaincode']['version'])")
+CC_SEQUENCE=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['chaincode']['sequence'])")
+CC_PATH=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['chaincode']['path'])")
+ORDERER_DOMAIN=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['domain'])")
+ORDERER_HOST=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['orderer']['name'])")
+ORDERER_PORT=$(python3 -c "import sys,json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['orderer']['port'])")
+
+ORDERER_CA=${NETWORK_DIR}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/${ORDERER_HOST}.${ORDERER_DOMAIN}/tls/ca.crt
+MFG_TLS=${NETWORK_DIR}/organizations/peerOrganizations/${MFG_DOMAIN}/peers/${MFG_PEER}.${MFG_DOMAIN}/tls/ca.crt
+SPLR_TLS=${NETWORK_DIR}/organizations/peerOrganizations/${SPLR_DOMAIN}/peers/${SPLR_PEER}.${SPLR_DOMAIN}/tls/ca.crt
+
+PKG_FILE=${NETWORK_DIR}/channel-artifacts/${CC_NAME}.tar.gz
+
+setMfgPeer() {
+  export CORE_PEER_LOCALMSPID=${MFG_MSP}
   export CORE_PEER_TLS_ENABLED=true
-  export CORE_PEER_TLS_ROOTCERT_FILE=${VR_BATTERY_TLS}
-  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/voltride.veritaschain.com/users/Admin@voltride.veritaschain.com/msp
-  export CORE_PEER_ADDRESS=localhost:11051
+  export CORE_PEER_TLS_ROOTCERT_FILE=${MFG_TLS}
+  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/${MFG_DOMAIN}/users/Admin@${MFG_DOMAIN}/msp
+  export CORE_PEER_ADDRESS=localhost:${MFG_PORT}
 }
-setVoltrideMotorPeer() {
-  export CORE_PEER_LOCALMSPID=VoltRideMSP
+setSplrPeer() {
+  export CORE_PEER_LOCALMSPID=${SPLR_MSP}
   export CORE_PEER_TLS_ENABLED=true
-  export CORE_PEER_TLS_ROOTCERT_FILE=${VR_MOTOR_TLS}
-  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/voltride.veritaschain.com/users/Admin@voltride.veritaschain.com/msp
-  export CORE_PEER_ADDRESS=localhost:12051
-}
-setVoltrideChassisPeer() {
-  export CORE_PEER_LOCALMSPID=VoltRideMSP
-  export CORE_PEER_TLS_ENABLED=true
-  export CORE_PEER_TLS_ROOTCERT_FILE=${VR_CHASSIS_TLS}
-  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/voltride.veritaschain.com/users/Admin@voltride.veritaschain.com/msp
-  export CORE_PEER_ADDRESS=localhost:13051
-}
-setBatteryPeer() {
-  export CORE_PEER_LOCALMSPID=BatteryMSP
-  export CORE_PEER_TLS_ENABLED=true
-  export CORE_PEER_TLS_ROOTCERT_FILE=${BATTERY_TLS}
-  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/battery.veritaschain.com/users/Admin@battery.veritaschain.com/msp
-  export CORE_PEER_ADDRESS=localhost:7051
-}
-setMotorPeer() {
-  export CORE_PEER_LOCALMSPID=MotorMSP
-  export CORE_PEER_TLS_ENABLED=true
-  export CORE_PEER_TLS_ROOTCERT_FILE=${MOTOR_TLS}
-  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/motor.veritaschain.com/users/Admin@motor.veritaschain.com/msp
-  export CORE_PEER_ADDRESS=localhost:9051
-}
-setChassisPeer() {
-  export CORE_PEER_LOCALMSPID=ChassisMSP
-  export CORE_PEER_TLS_ENABLED=true
-  export CORE_PEER_TLS_ROOTCERT_FILE=${CHASSIS_TLS}
-  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/chassis.veritaschain.com/users/Admin@chassis.veritaschain.com/msp
-  export CORE_PEER_ADDRESS=localhost:10051
+  export CORE_PEER_TLS_ROOTCERT_FILE=${SPLR_TLS}
+  export CORE_PEER_MSPCONFIGPATH=${NETWORK_DIR}/organizations/peerOrganizations/${SPLR_DOMAIN}/users/Admin@${SPLR_DOMAIN}/msp
+  export CORE_PEER_ADDRESS=localhost:${SPLR_PORT}
 }
 
-echo "===== Deploying veritasorder chaincode ====="
+echo "[${CHANNEL_NAME}] Packaging ${CC_NAME}..."
+setMfgPeer
+# Only package once (reuse existing package for subsequent channels)
+if [[ ! -f ${PKG_FILE} ]]; then
+  peer lifecycle chaincode package ${PKG_FILE} \
+    --path ${NETWORK_DIR}/${CC_PATH} \
+    --lang golang \
+    --label ${CC_NAME}_${CC_VERSION}
+  echo "[${CHANNEL_NAME}] Package created."
+else
+  echo "[${CHANNEL_NAME}] Reusing existing package."
+fi
 
-# ── 1. Package ────────────────────────────────────────────────────────────────
-echo ""
-echo "--- Step 1: Package ---"
-setVoltrideBatteryPeer
-peer lifecycle chaincode package ${NETWORK_DIR}/channel-artifacts/${CC_NAME}.tar.gz \
-  --path ${CC_SRC_PATH} \
-  --lang golang \
-  --label ${CC_NAME}_${CC_VERSION}
+echo "[${CHANNEL_NAME}] Installing on manufacturer peer..."
+setMfgPeer
+peer lifecycle chaincode install ${PKG_FILE}
 
-# ── 2. Install on all 6 peers ──────────────────────────────────────────────────
-echo ""
-echo "--- Step 2: Install on all peers ---"
-for setPeer in setVoltrideBatteryPeer setVoltrideMotorPeer setVoltrideChassisPeer setBatteryPeer setMotorPeer setChassisPeer; do
-  $setPeer
-  peer lifecycle chaincode install ${NETWORK_DIR}/channel-artifacts/${CC_NAME}.tar.gz
-done
+echo "[${CHANNEL_NAME}] Installing on supplier peer..."
+setSplrPeer
+peer lifecycle chaincode install ${PKG_FILE}
 
-# ── 3. Get package ID ─────────────────────────────────────────────────────────
-echo ""
-echo "--- Step 3: Query installed ---"
-setBatteryPeer
-CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled | grep "${CC_NAME}_${CC_VERSION}" | awk '{print $3}' | sed 's/,$//')
-echo "Package ID: ${CC_PACKAGE_ID}"
+echo "[${CHANNEL_NAME}] Querying package ID..."
+setMfgPeer
+CC_PACKAGE_ID=$(peer lifecycle chaincode queryinstalled 2>&1 | grep "${CC_NAME}_${CC_VERSION}" | awk '{print $3}' | sed 's/,$//' | head -1)
+echo "[${CHANNEL_NAME}] Package ID: ${CC_PACKAGE_ID}"
 
-# ── 4. Approve for voltride-battery ───────────────────────────────────────────
-echo ""
-echo "--- Step 4: Approve for voltride-battery ---"
-
-setVoltrideBatteryPeer
+echo "[${CHANNEL_NAME}] Approving for manufacturer org (${MFG_MSP})..."
+setMfgPeer
 peer lifecycle chaincode approveformyorg \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-battery --name ${CC_NAME} --version ${CC_VERSION} \
+  -o localhost:${ORDERER_PORT} --ordererTLSHostnameOverride ${ORDERER_HOST}.${ORDERER_DOMAIN} \
+  --channelID ${CHANNEL_NAME} --name ${CC_NAME} --version ${CC_VERSION} \
   --package-id ${CC_PACKAGE_ID} --sequence ${CC_SEQUENCE} \
   --tls --cafile ${ORDERER_CA}
 
-setBatteryPeer
+echo "[${CHANNEL_NAME}] Approving for supplier org (${SPLR_MSP})..."
+setSplrPeer
 peer lifecycle chaincode approveformyorg \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-battery --name ${CC_NAME} --version ${CC_VERSION} \
+  -o localhost:${ORDERER_PORT} --ordererTLSHostnameOverride ${ORDERER_HOST}.${ORDERER_DOMAIN} \
+  --channelID ${CHANNEL_NAME} --name ${CC_NAME} --version ${CC_VERSION} \
   --package-id ${CC_PACKAGE_ID} --sequence ${CC_SEQUENCE} \
   --tls --cafile ${ORDERER_CA}
 
-echo "Checking commit readiness for voltride-battery..."
-setBatteryPeer
-peer lifecycle chaincode checkcommitreadiness \
-  --channelID voltride-battery --name ${CC_NAME} --version ${CC_VERSION} \
-  --sequence ${CC_SEQUENCE} --tls --cafile ${ORDERER_CA} --output json
-
-echo "Committing to voltride-battery..."
+echo "[${CHANNEL_NAME}] Committing chaincode..."
 peer lifecycle chaincode commit \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-battery --name ${CC_NAME} --version ${CC_VERSION} --sequence ${CC_SEQUENCE} \
-  --peerAddresses localhost:11051 --tlsRootCertFiles ${VR_BATTERY_TLS} \
-  --peerAddresses localhost:7051  --tlsRootCertFiles ${BATTERY_TLS} \
+  -o localhost:${ORDERER_PORT} --ordererTLSHostnameOverride ${ORDERER_HOST}.${ORDERER_DOMAIN} \
+  --channelID ${CHANNEL_NAME} --name ${CC_NAME} --version ${CC_VERSION} --sequence ${CC_SEQUENCE} \
+  --peerAddresses localhost:${MFG_PORT} --tlsRootCertFiles ${MFG_TLS} \
+  --peerAddresses localhost:${SPLR_PORT} --tlsRootCertFiles ${SPLR_TLS} \
   --tls --cafile ${ORDERER_CA}
 
-# ── 5. Approve for voltride-motor ──────────────────────────────────────────────
-echo ""
-echo "--- Step 5: Approve for voltride-motor ---"
-
-setVoltrideMotorPeer
-peer lifecycle chaincode approveformyorg \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-motor --name ${CC_NAME} --version ${CC_VERSION} \
-  --package-id ${CC_PACKAGE_ID} --sequence ${CC_SEQUENCE} \
-  --tls --cafile ${ORDERER_CA}
-
-setMotorPeer
-peer lifecycle chaincode approveformyorg \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-motor --name ${CC_NAME} --version ${CC_VERSION} \
-  --package-id ${CC_PACKAGE_ID} --sequence ${CC_SEQUENCE} \
-  --tls --cafile ${ORDERER_CA}
-
-echo "Committing to voltride-motor..."
-peer lifecycle chaincode commit \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-motor --name ${CC_NAME} --version ${CC_VERSION} --sequence ${CC_SEQUENCE} \
-  --peerAddresses localhost:12051 --tlsRootCertFiles ${VR_MOTOR_TLS} \
-  --peerAddresses localhost:9051  --tlsRootCertFiles ${MOTOR_TLS} \
-  --tls --cafile ${ORDERER_CA}
-
-# ── 6. Approve for voltride-chassis ────────────────────────────────────────────
-echo ""
-echo "--- Step 6: Approve for voltride-chassis ---"
-
-setVoltrideChassisPeer
-peer lifecycle chaincode approveformyorg \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-chassis --name ${CC_NAME} --version ${CC_VERSION} \
-  --package-id ${CC_PACKAGE_ID} --sequence ${CC_SEQUENCE} \
-  --tls --cafile ${ORDERER_CA}
-
-setChassisPeer
-peer lifecycle chaincode approveformyorg \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-chassis --name ${CC_NAME} --version ${CC_VERSION} \
-  --package-id ${CC_PACKAGE_ID} --sequence ${CC_SEQUENCE} \
-  --tls --cafile ${ORDERER_CA}
-
-echo "Committing to voltride-chassis..."
-peer lifecycle chaincode commit \
-  -o localhost:7050 --ordererTLSHostnameOverride orderer0.veritaschain.com \
-  --channelID voltride-chassis --name ${CC_NAME} --version ${CC_VERSION} --sequence ${CC_SEQUENCE} \
-  --peerAddresses localhost:13051 --tlsRootCertFiles ${VR_CHASSIS_TLS} \
-  --peerAddresses localhost:10051 --tlsRootCertFiles ${CHASSIS_TLS} \
-  --tls --cafile ${ORDERER_CA}
-
-echo ""
-echo "veritasorder chaincode deployed to all 3 channels."
+echo "[${CHANNEL_NAME}] ${CC_NAME} deployed."
