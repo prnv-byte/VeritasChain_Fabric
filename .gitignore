@@ -1,17 +1,22 @@
 # Ledger data — never commit, rebuilds on deploy
 ledger/
+prototype/ledger/
 
-# Go build cache
+# Go build artifacts
 chaincode/*/vendor/.cache
 chaincode/*/*.test
+chaincode/order/order
 
-# Node modules (later, for app layer)
+# Node modules
 app/node_modules/
+api/node_modules/
 app/*.env
+api/*.env
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Deploy output log
+# Deploy output logs
 deploy-output.txt
+prototype/deploy-output.txt

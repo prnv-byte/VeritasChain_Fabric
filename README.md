@@ -1,38 +1,121 @@
-# VoltRide EV — Blockchain-Powered Supply Chain
+# VeritasChain — Open Industrial Marketplace on Hyperledger Fabric
 
-> Hyperledger Fabric 2.5 private network for EV component procurement with ZKML proof verification
-
----
-
-## Project Overview
-
-VoltRide is an electric scooter manufacturer building a trustless supply chain on Hyperledger Fabric. Suppliers submit Zero-Knowledge Machine Learning (ZKML) proofs alongside their quality control data, allowing VoltRide to verify component quality without ever seeing raw supplier data — preserving commercial confidentiality while ensuring integrity on an immutable ledger.
+> A permissioned blockchain platform where manufacturers and suppliers from any industry
+> can register, create private channels, transact, and verify quality using ZK proofs —
+> without exposing trade secrets to anyone.
 
 ---
 
-## System Architecture
+## What Is VeritasChain
+
+VeritasChain solves the trust problem in B2B supply chains.
+
+When a manufacturer buys components from a supplier they don't fully trust, they face two problems:
+- **Quality:** How do I know the component actually meets spec?
+- **Privacy:** If I ask for raw production data to verify, the supplier exposes their trade secrets.
+
+VeritasChain solves both using **Hyperledger Fabric private channels** (confidential transactions) and **ZK proofs** (mathematical quality verification without data exposure).
+
+Any manufacturer. Any supplier. Any component type. One platform.
+
+---
+
+## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     VoltRide Network                        │
-│                                                             │
-│  ┌──────────────┐   batterychannel   ┌──────────────────┐  │
-│  │  BatteryOrg  │◄──────────────────►│                  │  │
-│  │  peer0:7051  │                    │   VoltRideOrg    │  │
-│  └──────────────┘   motorchannel     │  peerbattery     │  │
-│  ┌──────────────┐◄──────────────────►│  :11051          │  │
-│  │   MotorOrg   │                    │  peermotor       │  │
-│  │  peer0:9051  │   chassischannel   │  :12051          │  │
-│  └──────────────┘◄──────────────────►│  peerchassis     │  │
-│  ┌──────────────┐                    │  :13051          │  │
-│  │  ChassisOrg  │                    └──────────────────┘  │
-│  │ peer0:10051  │                                          │
-│  └──────────────┘                                          │
-│                    ┌─────────────────┐                     │
-│                    │  OrdererOrg     │                     │
-│                    │  EtcdRaft :7050 │                     │
-│                    └─────────────────┘                     │
-└─────────────────────────────────────────────────────────────┘
+1. Register
+   Any organization registers on VeritasChain.
+   Fabric CA issues their cryptographic identity (MSP).
+
+2. Connect
+   Manufacturer invites a supplier → both accept →
+   a private Fabric channel is created between them only.
+
+3. Order
+   Manufacturer creates an order on-chain:
+   component type, specs, quantity, deadline.
+
+4. Fulfill
+   Supplier produces the component → runs ZK verifier locally →
+   uploads 4 ZK files to AWS S3 →
+   submits FulfillOrder with file URLs + SHA-256 hashes on-chain.
+
+5. Verify
+   Manufacturer downloads the 4 files → verifies each hash →
+   runs ZK verifier locally → updates status: ACCEPTED or REJECTED.
+
+6. Feedback
+   Manufacturer submits permanent on-chain feedback.
+   Builds the supplier's reputation record over time.
+```
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        VeritasChain                          │
+│                                                              │
+│  ┌──────────────┐   private channel   ┌──────────────────┐  │
+│  │ ManufacturerA│◄────────────────────►│   SupplierX      │  │
+│  └──────────────┘                     └──────────────────┘  │
+│                                                              │
+│  ┌──────────────┐   private channel   ┌──────────────────┐  │
+│  │ ManufacturerB│◄────────────────────►│   SupplierY      │  │
+│  └──────────────┘                     └──────────────────┘  │
+│                                                              │
+│  Each pair gets their own channel — nobody sees others'      │
+│  transactions. Any org can be both manufacturer and supplier.│
+│                                                              │
+│                    ┌─────────────────┐                       │
+│                    │  Raft Orderer   │ (orders transactions) │
+│                    └─────────────────┘                       │
+└──────────────────────────────────────────────────────────────┘
+
+Off-chain:
+  AWS S3      — stores ZK proof files (.vk, .pf, .srh, settings.json)
+  PostgreSQL  — stores AI agent summaries and reputation scores
+
+AI Layer:
+  Orchestrator Agent → Order Summary Agent
+                     → Supplier Reputation Agent
+                     → Deadline Monitor Agent
+                     → Feedback Analyzer Agent
+```
+
+---
+
+## Repository Structure
+
+```
+VeritasChain/
+│
+├── prototype/                  ← Start here if you are new
+│   ├── chaincode/              VoltRide demo — works locally, fully runnable
+│   │   ├── battery/            shows the concept end-to-end
+│   │   ├── motor/              read prototype/README.md to run it
+│   │   └── chassis/
+│   ├── docker/
+│   ├── organizations/
+│   ├── configtx/
+│   ├── scripts/
+│   └── README.md               full instructions to run the demo
+│
+├── chaincode/
+│   └── order/                  ← Universal VeritasChain chaincode
+│       └── order.go            one chaincode for all orgs, all components
+│
+├── network/                    ← (in progress) dynamic network configs
+│   ├── docker/                 supports orgs joining at runtime
+│   ├── configtx/
+│   └── scripts/
+│
+├── api/                        ← (in progress) platform backend
+│   ├── registration/           POST /api/register — creates Fabric identity
+│   └── channel/                POST /api/channel/create — creates private channel
+│
+└── README.md                   this file
 ```
 
 ---
@@ -42,318 +125,80 @@ VoltRide is an electric scooter manufacturer building a trustless supply chain o
 | Layer | Technology |
 |---|---|
 | Blockchain | Hyperledger Fabric 2.5 |
-| Consensus | EtcdRaft (single-node) |
-| Smart Contracts | Go (fabric-contract-api-go v1.2.1) |
+| Consensus | Raft (single-node for MVP) |
+| Smart Contracts | Go — `fabric-contract-api-go` |
 | Infrastructure | Docker Compose |
 | Off-chain Storage | AWS S3 |
-| ML Model | ANN (colleague's module) |
-| ZK Proofs | ZKML (colleague's module) |
-| Frontend | React.js (colleague's module) |
-| Backend API | Node.js + Express (in progress) |
+| Platform Backend | Node.js + Express |
+| AI Agents | Claude API (`claude-sonnet-4-6`) |
+| ZK Proofs | ZKML (Pranav's module) |
+| Frontend | React.js (Pranav's module) |
 
 ---
 
-## Repository Structure
+## The Chaincode — `chaincode/order/order.go`
 
-```
-VoltRide-Network/
-├── chaincode/
-│   ├── battery/              # Battery supplier chaincode (Go)
-│   ├── motor/                # Motor supplier chaincode (Go)
-│   └── chassis/              # Chassis supplier chaincode (Go)
-├── config/
-│   └── core.yaml             # Fabric peer configuration
-├── configtx/
-│   ├── configtx.yaml         # Channel profiles and MSP definitions
-│   ├── channel-artifacts/    # Genesis block, channel TXs, anchor TXs
-│   └── system-genesis-block/
-├── docker/
-│   ├── docker-compose-ca.yaml       # 5 Fabric CAs
-│   └── docker-compose-network.yaml  # Orderer + 6 peers
-├── organizations/
-│   ├── fabric-ca/               # CA server config per org
-│   ├── ordererOrganizations/    # Orderer MSP + TLS certs
-│   └── peerOrganizations/       # Peer MSP + TLS certs (all orgs)
-├── scripts/
-│   └── registerEnroll.sh        # CA enrollment script
-├── ledger/                      # Runtime ledger data (gitignored)
-├── deploy-and-test.sh           # One-shot deploy script
-└── README.md
-```
+One universal smart contract deployed to every channel.
+No hardcoded org names. Any registered org can be a manufacturer or supplier.
 
----
+**Functions:**
 
-## Prerequisites
-
-### 1. Docker
-```bash
-# Ubuntu
-sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-plugin
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-### 2. Hyperledger Fabric Binaries
-```bash
-curl -sSL https://bit.ly/2ysbOFE | bash -s -- 2.5.0 1.5.5
-echo 'export PATH=$PATH:$HOME/fabric-samples/bin' >> ~/.bashrc
-source ~/.bashrc
-peer version   # should show: hyperledger fabric 2.5.x
-```
-
-### 3. Required Docker Images
-```bash
-docker pull hyperledger/fabric-peer:2.5
-docker pull hyperledger/fabric-orderer:2.5
-docker pull hyperledger/fabric-ca:latest
-docker pull hyperledger/fabric-ccenv:2.5
-docker pull hyperledger/fabric-baseos:2.5
-```
-
-### 4. Go (only needed if modifying chaincode)
-```bash
-wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-go version
-```
-
----
-
-## Quick Start
-
-### Step 1 — Clone
-```bash
-git clone https://github.com/vrd-cse/VoltRide_project.git
-cd VoltRide_project
-```
-
-### Step 2 — Add DNS entries (CRITICAL — do not skip)
-Chaincode containers need to resolve peer hostnames via the host machine.
-Without this, every chaincode call will fail with a DNS error.
-```bash
-sudo bash -c 'cat >> /etc/hosts << EOF
-127.0.0.1 peer0.battery.example.com
-127.0.0.1 peer0.motor.example.com
-127.0.0.1 peer0.chassis.example.com
-127.0.0.1 peerbattery.voltride.example.com
-127.0.0.1 peermotor.voltride.example.com
-127.0.0.1 peerchassis.voltride.example.com
-127.0.0.1 orderer0.example.com
-EOF'
-```
-
-### Step 3 — Start CAs
-```bash
-docker compose -f docker/docker-compose-ca.yaml up -d
-sleep 5
-docker ps | grep ca_   # 5 CA containers should show Up
-```
-
-### Step 4 — Start Network
-```bash
-docker compose -f docker/docker-compose-network.yaml up -d
-sleep 10
-docker ps --format "table {{.Names}}\t{{.Status}}"
-# Expected: 7 containers Up — orderer + 6 peers
-```
-
-### Step 5 — Deploy Everything
-```bash
-chmod +x deploy-and-test.sh
-./deploy-and-test.sh 2>&1 | tee deploy-output.txt
-```
-
-This single script handles channel creation, peer joins, anchor peers, chaincode install, approve, commit, and smoke test.
-
-**Success looks like:**
-```
-=============================================
- BLOCKCHAIN LAYER COMPLETE - ALL TESTS DONE
-=============================================
-```
-
----
-
-## Order Lifecycle
-
-```
-VoltRide creates order
-        │
-        ▼
-    [PENDING]
-        │
-        ├──── CancelOrder (VoltRide) ────► [CANCELLED]
-        │
-        ▼
-Supplier fulfills with QC + ZK proof
-        │
-        ▼
-    [FULFILLED]
-        │
-        ├──── VerifyAndAccept (VoltRide) ─► [ACCEPTED]
-        │
-        └──── RejectOrder (VoltRide) ─────► [REJECTED]
-```
-
----
-
-## ZKML Integration Flow
-
-```
-Supplier                    Blockchain              VoltRide
-   │                            │                      │
-   ├── measure 6 QC params      │                      │
-   ├── upload raw data → S3     │                      │
-   ├── compute SHA-256 hash     │                      │
-   ├── run ZKML prover          │                      │
-   ├── generate ZK proof        │                      │
-   │                            │                      │
-   ├── FulfillOrder ───────────►│                      │
-   │   (QC params + hash +      │                      │
-   │    ZK proof)               │◄── fetch proof ──────┤
-   │                            │                      ├── run ZK verifier
-   │                            │                      │   off-chain
-   │                            │◄── VerifyAndAccept ──┤ (proof valid)
-   │                            │◄── RejectOrder ──────┤ (proof invalid)
-```
-
----
-
-## QC Parameters Reference
-
-### Battery (`batterychannel`)
-| Parameter | Unit | Valid Range |
+| Function | Who calls it | What it does |
 |---|---|---|
-| nominalVoltage | V | 2.5 – 4.5 |
-| internalResistance | mΩ | 0 – 500 |
-| capacity | Ah | 1 – 500 |
-| soh | % | 0 – 100 |
-| selfDischargeRate | %/month | 0 – 10 |
-| temperatureAtDelivery | °C | -40 – 85 |
+| `CreateOrder` | Manufacturer | Creates order → PENDING |
+| `FulfillOrder` | Supplier | Submits ZK file URLs + hashes → FULFILLED |
+| `VerifyAndAccept` | Manufacturer | Records ZK pass → ACCEPTED |
+| `RejectOrder` | Manufacturer | Records ZK fail → REJECTED |
+| `CancelOrder` | Manufacturer | Cancels before fulfillment → CANCELLED |
+| `SubmitFeedback` | Manufacturer | Permanent on-chain feedback |
+| `GetOrder` | Anyone | Read single order |
+| `GetAllOrders` | Anyone | Read all orders on channel |
+| `GetOrdersBySupplier` | Anyone | Supplier dashboard query |
+| `GetOrdersByManufacturer` | Anyone | Manufacturer dashboard query |
+| `GetOrderHistory` | Anyone | Full immutable audit trail |
 
-### Motor (`motorchannel`)
-| Parameter | Unit | Valid Range |
-|---|---|---|
-| ratedPower | kW | 0.1 – 100 |
-| noLoadRpm | RPM | 100 – 20000 |
-| phaseWindingResistance | Ω | 0.001 – 50 |
-| torqueOutput | Nm | 0.1 – 500 |
-| hallSensorOutput | V | 0 – 12 |
-| efficiency | % | 0 – 100 |
-
-### Chassis (`chassischannel`)
-| Parameter | Unit | Valid Range |
-|---|---|---|
-| weldQuality | score | 0 – 100 |
-| frameWeight | kg | 1 – 100 |
-| dimensionalAccuracy | mm | 0 – 50 |
-| materialGrade | string | non-empty |
-| surfaceDefectCount | count | ≥ 0 |
-| loadBearingCapacity | kg | 1 – 5000 |
+**Events emitted** (for AI agent):
+`OrderCreated` · `OrderFulfilled` · `OrderAccepted` · `OrderRejected` · `OrderCancelled` · `FeedbackSubmitted`
 
 ---
 
-## Chaincode API
+## ZK Proof Flow
 
-### FulfillOrder — key call for ZKML integration
-```json
-{
-  "function": "FulfillOrder",
-  "Args": [
-    "BAT-001",
-    "BATCH-2024-001",
-    "{\"nominalVoltage\":3.7,\"internalResistance\":25.0,\"capacity\":50.0,\"soh\":95.0,\"selfDischargeRate\":2.0,\"temperatureAtDelivery\":25.0}",
-    "sha256_hex_of_s3_file",
-    "base64_encoded_zk_proof"
-  ]
-}
+```
+Supplier machine:
+  1. Produce component
+  2. Run ZK verifier locally → generates 4 files:
+       .vk          verification key  (public — safe to share)
+       .pf          proof file        (public — safe to share)
+       .srh         public signals    (public — safe to share)
+       settings.json circuit params   (public — safe to share)
+  3. Upload all 4 to AWS S3
+  4. Compute SHA-256 hash of each file
+  5. Call FulfillOrder on-chain with 4 URLs + 4 hashes
+
+Manufacturer machine:
+  6. Download 4 files from URLs
+  7. Verify each file's hash matches what's on-chain (tamper check)
+  8. Run ZK verifier locally
+  9. If passes → VerifyAndAccept
+     If fails  → RejectOrder with reason
 ```
 
-### Full Function Reference
-| Function | Caller | Transition |
-|---|---|---|
-| CreateOrder | VoltRideMSP | → PENDING |
-| FulfillOrder | SupplierMSP | PENDING → FULFILLED |
-| VerifyAndAccept | VoltRideMSP | FULFILLED → ACCEPTED |
-| RejectOrder | VoltRideMSP | FULFILLED → REJECTED |
-| CancelOrder | VoltRideMSP | PENDING → CANCELLED |
-| GetOrder | Anyone | read only |
-| GetAllOrders | Anyone | read only |
-| GetOrderHistory | Anyone | full audit trail |
+The hashes on-chain are the tamper-evident seal.
+If a supplier modifies a file on S3 after submission, the hash will not match.
 
 ---
 
-## Network Management
+## Running The Prototype First
 
-### Stop (preserves ledger state)
+Before building or testing the platform, run the VoltRide prototype to understand the system:
+
 ```bash
-docker compose -f docker/docker-compose-network.yaml down
-docker compose -f docker/docker-compose-ca.yaml down
+cd prototype/
+cat README.md   # full instructions
 ```
 
-### Restart without redeploying
-```bash
-docker compose -f docker/docker-compose-ca.yaml up -d
-docker compose -f docker/docker-compose-network.yaml up -d
-```
-
-### Full wipe and redeploy from scratch
-```bash
-docker compose -f docker/docker-compose-network.yaml down
-sudo rm -rf ledger/orderer0/* ledger/peer0.battery/* ledger/peer0.motor/* ledger/peer0.chassis/*
-sudo rm -rf ledger/peerbattery.voltride/* ledger/peermotor.voltride/* ledger/peerchassis.voltride/*
-docker compose -f docker/docker-compose-network.yaml up -d
-sleep 10
-./deploy-and-test.sh
-```
-
----
-
-## Port Reference
-
-| Container | Peer Port | Chaincode Port |
-|---|---|---|
-| orderer0.example.com | 7050 | — |
-| peer0.battery.example.com | 7051 | 7052 |
-| peer0.motor.example.com | 9051 | 9052 |
-| peer0.chassis.example.com | 10051 | 10052 |
-| peerbattery.voltride.example.com | 11051 | 11052 |
-| peermotor.voltride.example.com | 12051 | 12052 |
-| peerchassis.voltride.example.com | 13051 | 13052 |
-
----
-
-## Troubleshooting
-
-**Chaincode exits with code 2**
-DNS resolution failing inside chaincode container. Verify `/etc/hosts` has all 7 entries from Step 2.
-
-**Orderer crashes on startup**
-```bash
-sudo rm -rf ledger/orderer0/*
-docker compose -f docker/docker-compose-network.yaml restart orderer0.example.com
-```
-
-**"sequence must be N" on approve/commit**
-```bash
-export FABRIC_CFG_PATH=$PWD/config
-export CORE_PEER_TLS_ENABLED=true
-ORDERER_CA=$PWD/organizations/ordererOrganizations/example.com/orderers/orderer0.example.com/tls/ca.crt
-peer lifecycle chaincode querycommitted -C batterychannel -n battery --tls --cafile $ORDERER_CA
-# Use returned sequence + 1 in your next approve/commit
-```
-
-**"ledger already exists" on channel create**
-Peers already have ledger data — skip channel creation, proceed directly to chaincode install.
-
-**Permission denied on git add**
-```bash
-sudo find organizations/ -type d -exec chmod 755 {} \;
-sudo find organizations/ -type f -exec chmod 644 {} \;
-```
+The prototype runs entirely locally with Docker and shows the complete order lifecycle working end-to-end.
 
 ---
 
@@ -362,12 +207,12 @@ sudo find organizations/ -type f -exec chmod 644 {} \;
 | Module | Owner |
 |---|---|
 | Hyperledger Fabric Network | @vrd-cse |
-| AWS S3 Off-chain Storage | @vrd-cse |
-| Node.js REST API | Colleague |
-| React.js Frontend | Colleague |
-| ANN Model + ZKML Prover | Colleague |
-| ZK Verifier Integration | Both |
+| AWS S3 + Platform Backend | @vrd-cse |
+| AI Agent Layer | @vrd-cse |
+| ZK Verifier + ZKML Model | Pranav |
+| React.js Frontend + Dashboard | Pranav |
 
 ---
 
-*VoltRide EV Project — BIT Mesra, 2026*
+*VeritasChain — Built at BIT Mesra, 2026*
+*DRDO Internship Project*
