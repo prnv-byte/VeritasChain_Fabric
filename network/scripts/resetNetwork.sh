@@ -1,27 +1,39 @@
 #!/bin/bash
 
 NETWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPTS_DIR="${NETWORK_DIR}/scripts"
 
 echo "!!! Resetting VeritasChain network — all data will be wiped !!!"
 
-# Stop and remove all containers
-${SCRIPTS_DIR}/stopNetwork.sh
+# Stop and remove compose-managed containers (orderer + orderer CA)
+docker compose -f "${NETWORK_DIR}/docker/docker-compose-network.yaml" down --volumes --remove-orphans 2>/dev/null || true
+docker compose -f "${NETWORK_DIR}/docker/docker-compose-ca.yaml" down --volumes --remove-orphans 2>/dev/null || true
 
-# Wipe crypto material and ledger data
-rm -rf ${NETWORK_DIR}/organizations/peerOrganizations
-rm -rf ${NETWORK_DIR}/organizations/ordererOrganizations
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/voltride/msp
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/voltride/tls-cert.pem
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/battery/msp
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/battery/tls-cert.pem
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/motor/msp
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/motor/tls-cert.pem
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/chassis/msp
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/chassis/tls-cert.pem
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/orderer/msp
-rm -rf ${NETWORK_DIR}/organizations/fabric-ca/orderer/tls-cert.pem
-rm -rf ${NETWORK_DIR}/channel-artifacts
-rm -rf ${NETWORK_DIR}/ledger
+# Stop and remove any dynamically-started org containers (peers + org CAs)
+# These match the pattern *.veritaschain.com (e.g. peer0.voltride.veritaschain.com, ca-voltride)
+DYNAMIC_CONTAINERS=$(docker ps -aq --filter "name=.veritaschain.com" 2>/dev/null || true)
+if [ -n "${DYNAMIC_CONTAINERS}" ]; then
+  echo "Stopping dynamic org containers..."
+  docker rm -f ${DYNAMIC_CONTAINERS} 2>/dev/null || true
+fi
 
-echo "Restart with: ./scripts/startNetwork.sh"
+# Also stop org CA containers (named ca-<orgname> pattern)
+DYNAMIC_CA_CONTAINERS=$(docker ps -aq --filter "name=ca-" 2>/dev/null | xargs -r docker inspect --format '{{.Name}}' 2>/dev/null | grep -v "ca-orderer" | xargs -r docker rm -f 2>/dev/null || true)
+
+# Remove any chaincode containers (dev-peer* pattern)
+docker rm -f $(docker ps -aq --filter "name=dev-peer") 2>/dev/null || true
+
+# Wipe runtime data — use Docker helper container (avoids sudo for root-owned files)
+if [ -d "${NETWORK_DIR}/organizations" ] || [ -d "${NETWORK_DIR}/ledger" ]; then
+  docker run --rm \
+    -v "${NETWORK_DIR}/organizations":/orgs \
+    -v "${NETWORK_DIR}/ledger":/ledger \
+    alpine sh -c "rm -rf /orgs/* /ledger/*" 2>/dev/null || true
+  rm -rf "${NETWORK_DIR}/organizations" "${NETWORK_DIR}/ledger"
+fi
+rm -rf "${NETWORK_DIR}/channel-artifacts"
+
+# Clean up any temp configtx dirs
+rm -rf /tmp/configtx-*
+
+echo "Network reset complete."
+echo "Run: ./scripts/startNetwork.sh"

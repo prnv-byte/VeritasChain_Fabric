@@ -48,6 +48,15 @@ const channels = {
   chassis: 'voltride-chassis',
 };
 
+// Which peer alias to use for each org+channel combination
+const peerForChannel = {
+  VoltRideMSP: {
+    'voltride-battery': 'battery',
+    'voltride-motor':   'motor',
+    'voltride-chassis': 'chassis',
+  },
+};
+
 // Map a component type to its channel name
 function channelForComponent(componentType) {
   const t = componentType.toLowerCase();
@@ -73,4 +82,4 @@ function identityPaths(mspId, peerHostname, userName = 'Admin') {
   return { certPath, keyPath, tlsCert };
 }
 
-module.exports = { NETWORK_DIR, orgs, channels, channelForComponent, identityPaths };
+module.exports = { NETWORK_DIR, orgs, channels, peerForChannel, channelForComponent, identityPaths };

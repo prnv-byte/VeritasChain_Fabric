@@ -5,7 +5,7 @@ const { connect, hash, signers } = require('@hyperledger/fabric-gateway');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { orgs, identityPaths } = require('../config/network');
+const { orgs, peerForChannel, identityPaths } = require('../config/network');
 
 // Cache open gRPC connections (one per peer address)
 const connectionCache = new Map();
@@ -55,7 +55,11 @@ async function getGateway(mspId, peerAlias) {
 
 // Get a contract handle: { gateway, contract } — caller must close gateway when done
 async function getContract(mspId, channelName, chaincodeName, peerAlias) {
-  const gateway = await getGateway(mspId, peerAlias);
+  // If no peerAlias given, pick the peer that belongs to this channel
+  const resolvedAlias = peerAlias
+    || (peerForChannel[mspId] && peerForChannel[mspId][channelName])
+    || undefined;
+  const gateway = await getGateway(mspId, resolvedAlias);
   const network  = gateway.getNetwork(channelName);
   const contract = network.getContract(chaincodeName);
   return { gateway, contract };

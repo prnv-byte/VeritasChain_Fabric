@@ -1,10 +1,9 @@
 'use strict';
 
-const express = require('express');
-const router  = express.Router();
+const express  = require('express');
+const router   = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { getContract } = require('../fabric/gateway');
-const { channelForComponent } = require('../config/network');
 
 const CC_NAME = 'veritasorder';
 
@@ -15,6 +14,10 @@ function decodeResult(result) {
   try { return JSON.parse(raw); } catch { return raw; }
 }
 
+/**
+ * Helper that opens a gateway, runs fn(contract), then closes the gateway.
+ * On chaincode-level errors (GatewayError), returns 400 instead of 500.
+ */
 async function withContract(mspId, channel, fn, res) {
   const { gateway, contract } = await getContract(mspId, channel, CC_NAME);
   try {
@@ -29,20 +32,25 @@ async function withContract(mspId, channel, fn, res) {
   }
 }
 
-// ── POST /orders ───────────────────────────────────────────────────────────────
-// Body: { manufacturerMSP, supplierMSP, componentType, quantity, specifications, deadline }
+// ── POST /orders ──────────────────────────────────────────────────────────────
+// Body: { manufacturerMSP, supplierMSP, componentType, quantity, specifications,
+//         deadline, channel }
 router.post('/', async (req, res) => {
   try {
-    const { manufacturerMSP, supplierMSP, componentType, quantity, specifications, deadline } = req.body;
-    if (!manufacturerMSP || !supplierMSP || !componentType || !quantity || !specifications || !deadline) {
-      return res.status(400).json({ error: 'Missing required fields: manufacturerMSP, supplierMSP, componentType, quantity, specifications, deadline' });
+    const { manufacturerMSP, supplierMSP, componentType, quantity,
+            specifications, deadline, channel } = req.body;
+
+    if (!manufacturerMSP || !supplierMSP || !componentType || !quantity ||
+        !specifications || !deadline || !channel) {
+      return res.status(400).json({
+        error: 'Missing required fields: manufacturerMSP, supplierMSP, componentType, quantity, specifications, deadline, channel',
+      });
     }
 
     const orderID = `ORDER-${uuidv4()}`;
-    const channel = channelForComponent(componentType);
 
-    // Chaincode signature: CreateOrder(orderID, quantity, componentType, specifications, supplierMSP, deadline)
-    // manufacturerMSP is inferred from the submitter's certificate inside chaincode
+    // Chaincode: CreateOrder(orderID, quantity, componentType, specifications, supplierMSP, deadline)
+    // manufacturerMSP is inferred from the submitter cert inside chaincode
     const result = await withContract(manufacturerMSP, channel, async (contract) => {
       await contract.submitTransaction(
         'CreateOrder',
@@ -62,100 +70,57 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ── GET /orders/:id?channel=voltride-battery ──────────────────────────────────
-router.get('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const channel = req.query.channel;
-    if (!channel) return res.status(400).json({ error: 'Query param ?channel= is required' });
-
-    const mspId = req.query.mspId || process.env.ORG_MSP_ID || 'VoltRideMSP';
-
-    const result = await withContract(mspId, channel, async (contract) => {
-      const data = await contract.evaluateTransaction('GetOrder', id);
-      return decodeResult(data);
-    }, res);
-
-    if (result) res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── GET /orders?channel=voltride-battery&mspId=BatteryMSP ────────────────────
+// ── GET /orders?channel=<name>&mspId=<id> ────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    const channel = req.query.channel;
+    const { channel, mspId } = req.query;
     if (!channel) return res.status(400).json({ error: 'Query param ?channel= is required' });
-
-    const mspId = req.query.mspId || process.env.ORG_MSP_ID || 'VoltRideMSP';
+    if (!mspId)   return res.status(400).json({ error: 'Query param ?mspId= is required' });
 
     const result = await withContract(mspId, channel, async (contract) => {
       const data = await contract.evaluateTransaction('GetAllOrders');
       return decodeResult(data);
     }, res);
 
-    if (result) res.json(result);
+    if (result !== null) res.json(result || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── GET /orders/by-supplier/:supplierMSP?channel= ────────────────────────────
-router.get('/by-supplier/:supplierMSP', async (req, res) => {
+// ── GET /orders/:id?channel=<name>&mspId=<id> ────────────────────────────────
+router.get('/:id', async (req, res) => {
   try {
-    const { supplierMSP } = req.params;
-    const channel = req.query.channel;
+    const { id } = req.params;
+    const { channel, mspId } = req.query;
     if (!channel) return res.status(400).json({ error: 'Query param ?channel= is required' });
-
-    const mspId = req.query.mspId || process.env.ORG_MSP_ID || 'VoltRideMSP';
+    if (!mspId)   return res.status(400).json({ error: 'Query param ?mspId= is required' });
 
     const result = await withContract(mspId, channel, async (contract) => {
-      const data = await contract.evaluateTransaction('GetOrdersBySupplier', supplierMSP);
+      const data = await contract.evaluateTransaction('GetOrder', id);
       return decodeResult(data);
     }, res);
 
-    if (result) res.json(result);
+    if (result !== null) res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── GET /orders/by-manufacturer/:manufacturerMSP?channel= ────────────────────
-router.get('/by-manufacturer/:manufacturerMSP', async (req, res) => {
-  try {
-    const { manufacturerMSP } = req.params;
-    const channel = req.query.channel;
-    if (!channel) return res.status(400).json({ error: 'Query param ?channel= is required' });
-
-    const mspId = req.query.mspId || process.env.ORG_MSP_ID || 'VoltRideMSP';
-
-    const result = await withContract(mspId, channel, async (contract) => {
-      const data = await contract.evaluateTransaction('GetOrdersByManufacturer', manufacturerMSP);
-      return decodeResult(data);
-    }, res);
-
-    if (result) res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── GET /orders/:id/history?channel= ─────────────────────────────────────────
+// ── GET /orders/:id/history?channel=<name>&mspId=<id> ────────────────────────
 router.get('/:id/history', async (req, res) => {
   try {
     const { id } = req.params;
-    const channel = req.query.channel;
+    const { channel, mspId } = req.query;
     if (!channel) return res.status(400).json({ error: 'Query param ?channel= is required' });
-
-    const mspId = req.query.mspId || process.env.ORG_MSP_ID || 'VoltRideMSP';
+    if (!mspId)   return res.status(400).json({ error: 'Query param ?mspId= is required' });
 
     const result = await withContract(mspId, channel, async (contract) => {
       const data = await contract.evaluateTransaction('GetOrderHistory', id);
       return decodeResult(data);
     }, res);
 
-    if (result) res.json(result);
+    if (result !== null) res.json(result || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -167,10 +132,12 @@ router.get('/:id/history', async (req, res) => {
 router.post('/:id/fulfill', async (req, res) => {
   try {
     const { id } = req.params;
-    const { channel, mspId, batchID, vkURL, pfURL, srhURL, settingsURL,
+    const { channel, mspId, batchID,
+            vkURL, pfURL, srhURL, settingsURL,
             vkHash, pfHash, srhHash, settingsHash } = req.body;
 
-    if (!channel || !mspId || !batchID || !vkURL || !pfURL || !srhURL || !settingsURL ||
+    if (!channel || !mspId || !batchID ||
+        !vkURL || !pfURL || !srhURL || !settingsURL ||
         !vkHash || !pfHash || !srhHash || !settingsHash) {
       return res.status(400).json({ error: 'Missing required fields for fulfill' });
     }
@@ -191,12 +158,11 @@ router.post('/:id/fulfill', async (req, res) => {
 });
 
 // ── POST /orders/:id/verify ───────────────────────────────────────────────────
-// Body: { channel, mspId, verificationResult, verifiedBy }
+// Body: { channel, mspId }
 router.post('/:id/verify', async (req, res) => {
   try {
     const { id } = req.params;
     const { channel, mspId } = req.body;
-
     if (!channel || !mspId) {
       return res.status(400).json({ error: 'channel and mspId are required' });
     }
@@ -218,9 +184,8 @@ router.post('/:id/reject', async (req, res) => {
   try {
     const { id } = req.params;
     const { channel, mspId, reason } = req.body;
-
     if (!channel || !mspId || !reason) {
-      return res.status(400).json({ error: 'Missing required fields for reject' });
+      return res.status(400).json({ error: 'channel, mspId, and reason are required' });
     }
 
     const result = await withContract(mspId, channel, async (contract) => {
@@ -240,7 +205,6 @@ router.post('/:id/cancel', async (req, res) => {
   try {
     const { id } = req.params;
     const { channel, mspId } = req.body;
-
     if (!channel || !mspId) {
       return res.status(400).json({ error: 'channel and mspId are required' });
     }
@@ -262,7 +226,6 @@ router.post('/:id/feedback', async (req, res) => {
   try {
     const { id } = req.params;
     const { channel, mspId, feedbackText } = req.body;
-
     if (!channel || !mspId || !feedbackText) {
       return res.status(400).json({ error: 'channel, mspId, and feedbackText are required' });
     }
