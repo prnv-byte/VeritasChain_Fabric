@@ -13,25 +13,26 @@ const orderer  = platform.orderer;
 /**
  * Generate a configtx.yaml YAML string for a specific channel between two orgs.
  *
- * @param {string} channelName  - e.g. "ch-voltride-battery"
- * @param {object} mfgOrg       - Org document (manufacturer)
- * @param {object} splrOrg      - Org document (supplier)
- * @returns {string}            - complete configtx.yaml content
+ * @param {string} channelName    - e.g. "ch-tatamotors-exide"
+ * @param {object} mfgOrg         - Org document (manufacturer)
+ * @param {object} splrOrg        - Org document (supplier)
+ * @param {object} channelOrderer - Per-channel orderer: { name, hostname, port, tlsCertPath }
+ * @returns {string}              - complete configtx.yaml content
  */
-function generateChannelConfigtx(channelName, mfgOrg, splrOrg) {
+function generateChannelConfigtx(channelName, mfgOrg, splrOrg, channelOrderer) {
   // Profile name: "ch-voltride-battery" → "ChVoltrideB attery"
   const profile = channelName.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('');
 
-  // Anchor names used in YAML: strip spaces from org name
-  const mfgAnchor  = mfgOrg.name.replace(/\s+/g, '');
-  const splrAnchor = splrOrg.name.replace(/\s+/g, '');
+  // Anchor names used in YAML: only alphanumeric chars allowed in YAML anchors
+  const mfgAnchor  = mfgOrg.name.replace(/[^a-zA-Z0-9]/g, '');
+  const splrAnchor = splrOrg.name.replace(/[^a-zA-Z0-9]/g, '');
 
   return `---
 Organizations:
   - &OrdererOrg
     Name: OrdererOrg
     ID: ${orderer.mspId}
-    MSPDir: ../organizations/ordererOrganizations/${DOMAIN}/msp
+    MSPDir: ${NETWORK_DIR}/organizations/ordererOrganizations/${DOMAIN}/msp
     Policies:
       Readers:
         Type: Signature
@@ -43,12 +44,12 @@ Organizations:
         Type: Signature
         Rule: "OR('${orderer.mspId}.admin')"
     OrdererEndpoints:
-      - ${orderer.name}.${DOMAIN}:${orderer.port}
+      - ${channelOrderer.hostname}:${channelOrderer.port}
 
   - &${mfgAnchor}Org
     Name: ${mfgAnchor}Org
     ID: ${mfgOrg.mspId}
-    MSPDir: ../organizations/peerOrganizations/${mfgOrg.domain}/msp
+    MSPDir: ${NETWORK_DIR}/organizations/peerOrganizations/${mfgOrg.domain}/msp
     Policies:
       Readers:
         Type: Signature
@@ -66,7 +67,7 @@ Organizations:
   - &${splrAnchor}Org
     Name: ${splrAnchor}Org
     ID: ${splrOrg.mspId}
-    MSPDir: ../organizations/peerOrganizations/${splrOrg.domain}/msp
+    MSPDir: ${NETWORK_DIR}/organizations/peerOrganizations/${splrOrg.domain}/msp
     Policies:
       Readers:
         Type: Signature
@@ -113,13 +114,13 @@ Application: &ApplicationDefaults
 Orderer: &OrdererDefaults
   OrdererType: etcdraft
   Addresses:
-    - ${orderer.name}.${DOMAIN}:${orderer.port}
+    - ${channelOrderer.hostname}:${channelOrderer.port}
   EtcdRaft:
     Consenters:
-      - Host: ${orderer.name}.${DOMAIN}
-        Port: ${orderer.port}
-        ClientTLSCert: ../organizations/ordererOrganizations/${DOMAIN}/orderers/${orderer.name}.${DOMAIN}/tls/server.crt
-        ServerTLSCert: ../organizations/ordererOrganizations/${DOMAIN}/orderers/${orderer.name}.${DOMAIN}/tls/server.crt
+      - Host: ${channelOrderer.hostname}
+        Port: ${channelOrderer.port}
+        ClientTLSCert: ${channelOrderer.tlsCertPath}
+        ServerTLSCert: ${channelOrderer.tlsCertPath}
   BatchTimeout: 2s
   BatchSize:
     MaxMessageCount: 10
@@ -186,12 +187,13 @@ Profiles:
  * @param {string} channelName
  * @param {object} mfgOrg
  * @param {object} splrOrg
+ * @param {object} channelOrderer - { name, hostname, port, tlsCertPath }
  * @returns {string} - path to temp dir containing configtx.yaml
  */
-function writeChannelConfigtx(channelName, mfgOrg, splrOrg) {
+function writeChannelConfigtx(channelName, mfgOrg, splrOrg, channelOrderer) {
   const tmpDir = `/tmp/configtx-${channelName}`;
   fs.mkdirSync(tmpDir, { recursive: true });
-  const yaml = generateChannelConfigtx(channelName, mfgOrg, splrOrg);
+  const yaml = generateChannelConfigtx(channelName, mfgOrg, splrOrg, channelOrderer);
   fs.writeFileSync(path.join(tmpDir, 'configtx.yaml'), yaml);
   return tmpDir;
 }

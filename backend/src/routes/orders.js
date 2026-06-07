@@ -24,7 +24,14 @@ async function withContract(mspId, channel, fn, res) {
     return await fn(contract);
   } catch (err) {
     console.error('[withContract error]', err.message, err.details);
-    const msg = (err.details && err.details.length) ? err.details : (err.message || String(err));
+    let msg;
+    if (err.details && err.details.length) {
+      msg = err.details
+        .map(d => (typeof d === 'string' ? d : d.message || d.description || JSON.stringify(d)))
+        .join('; ');
+    } else {
+      msg = err.message || String(err);
+    }
     res.status(400).json({ error: msg });
     return null;
   } finally {

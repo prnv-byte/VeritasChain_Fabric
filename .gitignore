@@ -1,7 +1,4 @@
-# Ledger data and runtime crypto — never commit, rebuild on deploy
-ledger/
-prototype/ledger/
-network/ledger/
+# ── Generated crypto material — NEVER commit (contains private keys) ──────────
 network/organizations/peerOrganizations/
 network/organizations/ordererOrganizations/
 network/organizations/fabric-ca/*/msp/
@@ -10,23 +7,45 @@ network/organizations/fabric-ca/*/IssuerPublicKey
 network/organizations/fabric-ca/*/IssuerRevocationPublicKey
 network/organizations/fabric-ca/*/ca-cert.pem
 network/organizations/fabric-ca/*/fabric-ca-server.db
+
+# ── Generated at runtime — rebuild with scripts ────────────────────────────────
+ledger/
+prototype/ledger/
+network/ledger/
 network/channel-artifacts/
 
-# Go build artifacts
-chaincode/*/vendor/.cache
+# ── Node dependencies — install with npm install ───────────────────────────────
+node_modules/
+app/node_modules/
+api/node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# ── Lock files ─────────────────────────────────────────────────────────────────
+backend/package-lock.json
+frontend/package-lock.json
+api/package-lock.json
+
+# ── Go vendor — regenerate with: go mod vendor ────────────────────────────────
+chaincode/order/vendor/
+
+# ── Claude Code workspace ──────────────────────────────────────────────────────
+.claude/
+
+# ── Go build artifacts ─────────────────────────────────────────────────────────
 chaincode/*/*.test
 chaincode/order/order
 
-# Node modules
-app/node_modules/
-api/node_modules/
+# ── Environment files ─────────────────────────────────────────────────────────
+.env
+*.env
 app/*.env
 api/*.env
 
-# OS files
+# ── OS files ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Deploy output logs
+# ── Misc ───────────────────────────────────────────────────────────────────────
 deploy-output.txt
 prototype/deploy-output.txt

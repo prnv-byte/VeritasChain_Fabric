@@ -18,60 +18,6 @@ Organizations:
     OrdererEndpoints:
       - orderer0.veritaschain.com:7050
 
-  - &BatteryOrg
-    Name: BatteryOrg
-    ID: BatteryMSP
-    MSPDir: ../organizations/peerOrganizations/battery.veritaschain.com/msp
-    Policies:
-      Readers:
-        Type: Signature
-        Rule: "OR('BatteryMSP.admin', 'BatteryMSP.peer', 'BatteryMSP.client')"
-      Writers:
-        Type: Signature
-        Rule: "OR('BatteryMSP.admin', 'BatteryMSP.client')"
-      Admins:
-        Type: Signature
-        Rule: "OR('BatteryMSP.admin')"
-      Endorsement:
-        Type: Signature
-        Rule: "OR('BatteryMSP.peer')"
-
-  - &MotorOrg
-    Name: MotorOrg
-    ID: MotorMSP
-    MSPDir: ../organizations/peerOrganizations/motor.veritaschain.com/msp
-    Policies:
-      Readers:
-        Type: Signature
-        Rule: "OR('MotorMSP.admin', 'MotorMSP.peer', 'MotorMSP.client')"
-      Writers:
-        Type: Signature
-        Rule: "OR('MotorMSP.admin', 'MotorMSP.client')"
-      Admins:
-        Type: Signature
-        Rule: "OR('MotorMSP.admin')"
-      Endorsement:
-        Type: Signature
-        Rule: "OR('MotorMSP.peer')"
-
-  - &ChassisOrg
-    Name: ChassisOrg
-    ID: ChassisMSP
-    MSPDir: ../organizations/peerOrganizations/chassis.veritaschain.com/msp
-    Policies:
-      Readers:
-        Type: Signature
-        Rule: "OR('ChassisMSP.admin', 'ChassisMSP.peer', 'ChassisMSP.client')"
-      Writers:
-        Type: Signature
-        Rule: "OR('ChassisMSP.admin', 'ChassisMSP.client')"
-      Admins:
-        Type: Signature
-        Rule: "OR('ChassisMSP.admin')"
-      Endorsement:
-        Type: Signature
-        Rule: "OR('ChassisMSP.peer')"
-
   - &VoltRideOrg
     Name: VoltRideOrg
     ID: VoltRideMSP
@@ -89,6 +35,57 @@ Organizations:
       Endorsement:
         Type: Signature
         Rule: "OR('VoltRideMSP.peer')"
+  - &BatteryOrg
+    Name: BatteryOrg
+    ID: BatteryMSP
+    MSPDir: ../organizations/peerOrganizations/battery.veritaschain.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('BatteryMSP.admin', 'BatteryMSP.peer', 'BatteryMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('BatteryMSP.admin', 'BatteryMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('BatteryMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('BatteryMSP.peer')"
+  - &MotorOrg
+    Name: MotorOrg
+    ID: MotorMSP
+    MSPDir: ../organizations/peerOrganizations/motor.veritaschain.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('MotorMSP.admin', 'MotorMSP.peer', 'MotorMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('MotorMSP.admin', 'MotorMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('MotorMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('MotorMSP.peer')"
+  - &ChassisOrg
+    Name: ChassisOrg
+    ID: ChassisMSP
+    MSPDir: ../organizations/peerOrganizations/chassis.veritaschain.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('ChassisMSP.admin', 'ChassisMSP.peer', 'ChassisMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('ChassisMSP.admin', 'ChassisMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('ChassisMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('ChassisMSP.peer')"
 
 Capabilities:
   Channel: &ChannelCapabilities
@@ -167,20 +164,7 @@ Channel: &ChannelDefaults
 
 Profiles:
 
-  VeritasOrdererGenesis:
-    <<: *ChannelDefaults
-    Orderer:
-      <<: *OrdererDefaults
-      Organizations:
-        - *OrdererOrg
-      Capabilities: *OrdererCapabilities
-    Application:
-      <<: *ApplicationDefaults
-      Organizations:
-        - *OrdererOrg
-      Capabilities: *ApplicationCapabilities
-
-  BatteryChannel:
+  VoltrideBattery:
     <<: *ChannelDefaults
     Orderer:
       <<: *OrdererDefaults
@@ -199,8 +183,7 @@ Profiles:
             - Host: peer0.battery.veritaschain.com
               Port: 7051
       Capabilities: *ApplicationCapabilities
-
-  MotorChannel:
+  VoltrideMotor:
     <<: *ChannelDefaults
     Orderer:
       <<: *OrdererDefaults
@@ -219,8 +202,7 @@ Profiles:
             - Host: peer0.motor.veritaschain.com
               Port: 9051
       Capabilities: *ApplicationCapabilities
-
-  ChassisChannel:
+  VoltrideChassis:
     <<: *ChannelDefaults
     Orderer:
       <<: *OrdererDefaults

@@ -22,6 +22,14 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'type must be "manufacturer" or "supplier"' });
     }
 
+    // Org name must produce a valid Fabric identifier (at least 3 alphanumeric chars after stripping)
+    const cleanName = name.trim().replace(/[^a-zA-Z0-9]/g, '');
+    if (cleanName.length < 3) {
+      return res.status(400).json({
+        error: 'Organization name must contain at least 3 letters or digits (e.g. "Tata Motors", not "A.B.")',
+      });
+    }
+
     // Check name uniqueness
     const existing = await Org.findOne({ name: name.trim() });
     if (existing) {

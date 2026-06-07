@@ -18,6 +18,11 @@ export default function Register() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    const cleanName = form.name.replace(/[^a-zA-Z0-9]/g, '');
+    if (cleanName.length < 3) {
+      setError('Name must contain at least 3 letters or digits. Remove special characters like dots, slashes, or symbols.');
+      return;
+    }
     setLoading(true);
     try {
       const result = await api.registerOrg(form);

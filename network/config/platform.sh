@@ -5,7 +5,7 @@ PLATFORM_DOMAIN="veritaschain.com"
 CC_NAME="veritasorder"
 CC_VERSION="1.0"
 CC_SEQUENCE="1"
-CC_PATH="../../chaincode/order"
+CC_PATH="../chaincode/order"
 
 ORDERER_HOST="orderer0"
 ORDERER_DOMAIN="veritaschain.com"
@@ -14,35 +14,3 @@ ORDERER_PORT=7050
 ORDERER_ADMIN_PORT=7053
 ORDERER_CA_PORT=11054
 ORDERER_CA_NAME="ca-orderer"
-
-ORGS=("voltride" "battery" "motor" "chassis")
-
-ORG_voltride_MSP="VoltRideMSP"
-ORG_voltride_DOMAIN="voltride.veritaschain.com"
-ORG_voltride_CA_NAME="ca-voltride"
-ORG_voltride_CA_PORT=7054
-ORG_voltride_PEERS="peerbattery:11051:11052 peermotor:12051:12052 peerchassis:13051:13052"
-
-ORG_battery_MSP="BatteryMSP"
-ORG_battery_DOMAIN="battery.veritaschain.com"
-ORG_battery_CA_NAME="ca-battery"
-ORG_battery_CA_PORT=8054
-ORG_battery_PEERS="peer0:7051:7052"
-
-ORG_motor_MSP="MotorMSP"
-ORG_motor_DOMAIN="motor.veritaschain.com"
-ORG_motor_CA_NAME="ca-motor"
-ORG_motor_CA_PORT=9054
-ORG_motor_PEERS="peer0:9051:9052"
-
-ORG_chassis_MSP="ChassisMSP"
-ORG_chassis_DOMAIN="chassis.veritaschain.com"
-ORG_chassis_CA_NAME="ca-chassis"
-ORG_chassis_CA_PORT=10054
-ORG_chassis_PEERS="peer0:10051:10052"
-
-CHANNEL_DEFS=(
-  "voltride-battery:VoltRideMSP:voltride.veritaschain.com:peerbattery:11051:BatteryMSP:battery.veritaschain.com:peer0:7051"
-  "voltride-motor:VoltRideMSP:voltride.veritaschain.com:peermotor:12051:MotorMSP:motor.veritaschain.com:peer0:9051"
-  "voltride-chassis:VoltRideMSP:voltride.veritaschain.com:peerchassis:13051:ChassisMSP:chassis.veritaschain.com:peer0:10051"
-)

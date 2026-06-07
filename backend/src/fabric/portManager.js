@@ -1,11 +1,12 @@
 'use strict';
 
-const Org = require('../models/Org');
+const Org     = require('../models/Org');
+const Channel = require('../models/Channel');
 
-// Ports that are permanently reserved and must never be assigned to orgs
+// Ports that are permanently reserved and must never be assigned
 const RESERVED_PORTS = new Set([
-  7050,  // orderer gRPC
-  7053,  // orderer admin
+  7050,  // shared orderer gRPC (startNetwork orderer)
+  7053,  // shared orderer admin
   11054, // orderer CA
   27017, // MongoDB
 ]);
@@ -18,6 +19,11 @@ const CA_PORT_STEP  = 1000;
 // CC port is always peerPort + 1
 const PEER_PORT_START = 7051;
 const PEER_PORT_STEP  = 2000;
+
+// Per-channel orderer gRPC ports: start at 8050, step 1000 (8050, 9050, 10050, ...)
+// Admin port is always ordererPort + 3 (8053, 9053, 10053, ...)
+const ORDERER_PORT_START = 8050;
+const ORDERER_PORT_STEP  = 1000;
 
 async function getUsedCaPorts() {
   const orgs = await Org.find({ caPort: { $exists: true, $ne: null } }).select('caPort');
@@ -73,4 +79,36 @@ async function assignPeerPort() {
   }
 }
 
-module.exports = { assignCaPort, assignPeerPort };
+async function getUsedOrdererPorts() {
+  const channels = await Channel.find({
+    ordererPort: { $exists: true, $ne: null },
+  }).select('ordererPort ordererAdminPort');
+  const ports = new Set();
+  for (const ch of channels) {
+    if (ch.ordererPort)      ports.add(ch.ordererPort);
+    if (ch.ordererAdminPort) ports.add(ch.ordererAdminPort);
+  }
+  return ports;
+}
+
+/**
+ * Assign the next available per-channel orderer port pair.
+ * Returns { port, adminPort } where adminPort = port + 3.
+ */
+async function assignOrdererPorts() {
+  const usedOrdererPorts = await getUsedOrdererPorts();
+  let port = ORDERER_PORT_START;
+  while (true) {
+    const adminPort = port + 3;
+    if (
+      !RESERVED_PORTS.has(port)      && !usedOrdererPorts.has(port) &&
+      !RESERVED_PORTS.has(adminPort) && !usedOrdererPorts.has(adminPort)
+    ) {
+      return { port, adminPort };
+    }
+    port += ORDERER_PORT_STEP;
+    if (port > 65000) throw new Error('No available orderer ports');
+  }
+}
+
+module.exports = { assignCaPort, assignPeerPort, assignOrdererPorts };

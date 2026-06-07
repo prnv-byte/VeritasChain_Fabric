@@ -31,48 +31,47 @@ router.post('/request', async (req, res) => {
       });
     }
 
-    // Determine which is manufacturer and which is supplier
-    let mfgOrg, splrOrg;
-    if (fromOrg.type === 'manufacturer' && toOrg.type === 'supplier') {
-      mfgOrg = fromOrg; splrOrg = toOrg;
-    } else if (fromOrg.type === 'supplier' && toOrg.type === 'manufacturer') {
-      mfgOrg = toOrg; splrOrg = fromOrg;
-    } else {
-      return res.status(400).json({
-        error: 'A channel requires exactly one manufacturer and one supplier',
-      });
-    }
-
-    // Find or create the channel record
+    // Any org type can channel with any other — requester is always "mfg" slot (order creator)
+    // Find existing channel in either direction
     let channel = await Channel.findOne({
-      manufacturerOrgId: mfgOrg._id,
-      supplierOrgId:     splrOrg._id,
+      $or: [
+        { manufacturerOrgId: fromOrg._id, supplierOrgId: toOrg._id },
+        { manufacturerOrgId: toOrg._id,   supplierOrgId: fromOrg._id },
+      ],
     });
 
     if (!channel) {
-      const channelName = toChannelName(mfgOrg, splrOrg);
+      // First request — fromOrg is initiator (mfg slot), toOrg is target (splr slot)
+      const channelName = toChannelName(fromOrg, toOrg);
       channel = await Channel.create({
         channelName,
-        manufacturerOrgId: mfgOrg._id,
-        supplierOrgId:     splrOrg._id,
-        requestedByMfg:  fromOrg.type === 'manufacturer',
-        requestedBySplr: fromOrg.type === 'supplier',
+        manufacturerOrgId: fromOrg._id,
+        supplierOrgId:     toOrg._id,
+        requestedByMfg:  true,
+        requestedBySplr: false,
         status: 'pending',
       });
     } else {
-      // Update the request flag for the requesting side (idempotent)
-      if (fromOrg.type === 'manufacturer') channel.requestedByMfg  = true;
-      else                                  channel.requestedBySplr = true;
+      // Second request — mark the accepting side
+      const fromIsMfg = channel.manufacturerOrgId.equals(fromOrg._id);
+      if (fromIsMfg) channel.requestedByMfg  = true;
+      else           channel.requestedBySplr = true;
       await channel.save();
     }
 
-    // If both sides have requested AND channel is still pending → provision it
-    if (channel.requestedByMfg && channel.requestedBySplr && channel.status === 'pending') {
+    // If both sides have requested AND channel is pending or failed → provision it
+    if (channel.requestedByMfg && channel.requestedBySplr && (channel.status === 'pending' || channel.status === 'failed')) {
       channel.status = 'provisioning';
       await channel.save();
 
-      // Fire-and-forget channel creation
-      createChannel(channel.channelName, mfgOrg.toObject(), splrOrg.toObject())
+      // Fetch the two orgs from the channel record (works for both first-time and retry)
+      const [channelMfgOrg, channelSplrOrg] = await Promise.all([
+        Org.findById(channel.manufacturerOrgId),
+        Org.findById(channel.supplierOrgId),
+      ]);
+
+      // Fire-and-forget channel creation (pass channel._id so provisioner can save orderer info)
+      createChannel(channel.channelName, channelMfgOrg.toObject(), channelSplrOrg.toObject(), channel._id)
         .then(() => Channel.findByIdAndUpdate(channel._id, { status: 'active' }))
         .catch(err => {
           console.error(`[channels] Channel creation failed for "${channel.channelName}":`, err.message);

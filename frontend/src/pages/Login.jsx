@@ -12,11 +12,12 @@ export default function Login() {
 
   useEffect(() => {
     fetchOrgs();
+    const interval = setInterval(fetchOrgs, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   async function fetchOrgs() {
     try {
-      setLoading(true);
       const data = await api.getOrgs({ status: 'active' });
       if (Array.isArray(data)) setOrgs(data);
       else setError(data.error || 'Failed to load organizations');

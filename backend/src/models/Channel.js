@@ -29,6 +29,10 @@ const ChannelSchema = new mongoose.Schema({
     enum: ['pending', 'provisioning', 'active', 'failed'],
     default: 'pending',
   },
+  // Per-channel dedicated orderer (populated when provisioning starts)
+  ordererName:      { type: String },   // full hostname e.g. "orderer-ch-tata-exide.veritaschain.com"
+  ordererPort:      { type: Number },   // gRPC port e.g. 8050
+  ordererAdminPort: { type: Number },   // admin port e.g. 8053
   createdAt: {
     type: Date,
     default: Date.now,

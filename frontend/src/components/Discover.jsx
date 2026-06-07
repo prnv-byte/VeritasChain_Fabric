@@ -27,19 +27,14 @@ export default function Discover({ myOrg, channels, onChannelCreated }) {
     setTimeout(() => setToast(null), 3500);
   }
 
-  // Determine which orgs already have a channel with me
-  const channelledOrgIds = new Set();
+  // Map each partner org ID → channel record
+  const channelByOrgId = new Map();
   channels.forEach(ch => {
     const mfgId = ch.manufacturerOrgId?._id || ch.manufacturerOrgId;
     const splrId = ch.supplierOrgId?._id || ch.supplierOrgId;
-    if (mfgId === myOrg.id || splrId === myOrg.id) {
-      if (mfgId !== myOrg.id) channelledOrgIds.add(mfgId);
-      if (splrId !== myOrg.id) channelledOrgIds.add(splrId);
-    }
+    const partnerId = mfgId === myOrg.id ? splrId : mfgId;
+    if (partnerId) channelByOrgId.set(partnerId, ch);
   });
-
-  // Opposite type filter (manufacturer sees suppliers and vice versa)
-  const oppositeType = myOrg.type === 'manufacturer' ? 'supplier' : 'manufacturer';
 
   const filtered = orgs.filter(o => {
     if (o._id === myOrg.id) return false; // exclude self
@@ -116,9 +111,15 @@ export default function Discover({ myOrg, channels, onChannelCreated }) {
       {/* Org grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
         {filtered.map(org => {
-          const hasChannel  = channelledOrgIds.has(org._id);
-          const canConnect  = org.type === oppositeType && !hasChannel;
           const isOwnOrg    = org._id === myOrg.id;
+          const ch          = channelByOrgId.get(org._id);
+          const isActive    = ch?.status === 'active';
+          const isFailed    = ch?.status === 'failed';
+          const isPending   = ch?.status === 'pending' || ch?.status === 'provisioning';
+          const iAmMfg      = ch && (ch.manufacturerOrgId?._id === myOrg.id || ch.manufacturerOrgId === myOrg.id);
+          const iRequested  = ch && (iAmMfg ? ch.requestedByMfg : ch.requestedBySplr);
+          const needsAccept = isPending && !iRequested;
+          const canConnect  = !ch || isFailed;
 
           return (
             <div key={org._id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -142,25 +143,35 @@ export default function Discover({ myOrg, channels, onChannelCreated }) {
               {/* Action */}
               {!isOwnOrg && (
                 <div style={{ marginTop: 'auto', paddingTop: 4 }}>
-                  {hasChannel ? (
+                  {isActive ? (
                     <div style={{ fontSize: 12, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>✓</span> Channel exists
+                      <span>✓</span> Channel active
                     </div>
-                  ) : canConnect ? (
+                  ) : ch?.status === 'provisioning' && iRequested ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="spinner spinner-dark" style={{ width: 10, height: 10 }} /> Creating channel…
+                    </div>
+                  ) : needsAccept ? (
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={() => requestChannel(org)}
                       style={{ width: '100%', justifyContent: 'center' }}
                     >
-                      Request Channel
+                      Accept Channel Request
                     </button>
-                  ) : (
+                  ) : isPending && iRequested ? (
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {org.type === myOrg.type
-                        ? 'Same type — no channel needed'
-                        : 'Channel request pending'}
+                      ⏳ Waiting for {org.name} to accept…
                     </div>
-                  )}
+                  ) : canConnect ? (
+                    <button
+                      className={`btn btn-sm ${isFailed ? 'btn-danger' : 'btn-primary'}`}
+                      onClick={() => requestChannel(org)}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                    >
+                      {isFailed ? 'Retry Channel' : 'Request Channel'}
+                    </button>
+                  ) : null}
                 </div>
               )}
             </div>

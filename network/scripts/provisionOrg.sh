@@ -29,6 +29,10 @@ function provisionPeerOrg() {
     --caname ${CA_NAME} \
     --tls.certfiles ${CA_TLS}
 
+  # tlscacerts needed so channel config has TLS root CA for each org (required by Fabric Gateway SDK)
+  mkdir -p ${ORG_DIR}/msp/tlscacerts
+  cp ${ORG_DIR}/msp/cacerts/${CA_CERT_FILE} ${ORG_DIR}/msp/tlscacerts/${CA_CERT_FILE}
+
   # MSP config.yaml — tells Fabric how to map OU fields in certs
   cat > ${ORG_DIR}/msp/config.yaml <<NODEOUS
 NodeOUs:
@@ -132,6 +136,10 @@ function provisionOrdererOrg() {
     -u https://admin:adminpw@localhost:${CA_PORT} \
     --caname ${CA_NAME} \
     --tls.certfiles ${CA_TLS}
+
+  # tlscacerts needed so osnadmin can verify the orderer TLS cert in genesis blocks
+  mkdir -p ${ORG_DIR}/msp/tlscacerts
+  cp ${ORG_DIR}/msp/cacerts/${CA_CERT_FILE} ${ORG_DIR}/msp/tlscacerts/${CA_CERT_FILE}
 
   cat > ${ORG_DIR}/msp/config.yaml <<NODEOUS
 NodeOUs:

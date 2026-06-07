@@ -14,23 +14,23 @@ const DOMAIN = 'veritaschain.com';
 
 /** "Tata Motors" → "TataMotorsMSP" */
 function toMspId(orgName) {
-  return orgName.replace(/\s+/g, '') + 'MSP';
+  return orgName.replace(/[^a-zA-Z0-9]/g, '') + 'MSP';
 }
 
 /** "Tata Motors" → "tatamotors.veritaschain.com" */
 function toDomain(orgName) {
-  return orgName.toLowerCase().replace(/\s+/g, '') + '.' + DOMAIN;
+  return orgName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.' + DOMAIN;
 }
 
 /** "Tata Motors" → "tatamotors" */
 function toFolderName(orgName) {
-  return orgName.toLowerCase().replace(/\s+/g, '');
+  return orgName.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 /** Generate a channel name from two org objects */
 function toChannelName(mfgOrg, splrOrg) {
-  const mfgSlug  = mfgOrg.name.toLowerCase().replace(/\s+/g, '');
-  const splrSlug = splrOrg.name.toLowerCase().replace(/\s+/g, '');
+  const mfgSlug  = mfgOrg.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const splrSlug = splrOrg.name.toLowerCase().replace(/[^a-z0-9]/g, '');
   return `ch-${mfgSlug}-${splrSlug}`;
 }
 
@@ -176,21 +176,62 @@ provisionPeerOrg \
 // ── Channel creation ──────────────────────────────────────────────────────────
 
 /**
- * Create a channel between manufacturer and supplier:
- *  1. Generate per-channel configtx.yaml in /tmp
- *  2. Call createChannel.sh (passes configtxDir as 10th arg)
- *  3. Call deployChaincode.sh
+ * Create a channel between manufacturer and supplier with a dedicated per-channel orderer:
+ *  1. Assign orderer ports and save to the Channel record
+ *  2. Provision the orderer (enroll identity + start Docker container)
+ *  3. Wait for orderer to be ready
+ *  4. Generate per-channel configtx.yaml referencing this orderer
+ *  5. Call createChannel.sh
+ *  6. Call deployChaincode.sh
  *
  * @param {string} channelName
- * @param {object} mfgOrg - plain object (from .toObject() or mongo doc)
- * @param {object} splrOrg - plain object
+ * @param {object} mfgOrg    - plain object (from .toObject() or mongo doc)
+ * @param {object} splrOrg   - plain object
+ * @param {string} channelId - MongoDB _id of the Channel record (to save orderer info)
  */
-async function createChannel(channelName, mfgOrg, splrOrg) {
+async function createChannel(channelName, mfgOrg, splrOrg, channelId) {
   const { writeChannelConfigtx } = require('./configGenerator');
+  const { assignOrdererPorts }   = require('./portManager');
+  const Channel                  = require('../models/Channel');
 
+  // 1. Assign unique ports for this channel's dedicated orderer
+  const { port: ordererPort, adminPort: ordererAdminPort } = await assignOrdererPorts();
+  const ordererName     = `orderer-${channelName}`;
+  const ordererHostname = `${ordererName}.${DOMAIN}`;
+  const ordererTlsCert  = path.join(
+    NETWORK_DIR, 'organizations', 'ordererOrganizations', DOMAIN,
+    'orderers', ordererHostname, 'tls', 'server.crt'
+  );
+
+  // Persist orderer info immediately so retries and dashboards can show it
+  if (channelId) {
+    await Channel.findByIdAndUpdate(channelId, {
+      ordererName: ordererHostname,
+      ordererPort,
+      ordererAdminPort,
+    });
+  }
+
+  // 2. Provision the per-channel orderer (enroll from CA + start Docker)
+  console.log(`[provisioner] Provisioning orderer ${ordererHostname} (port ${ordererPort}, admin ${ordererAdminPort})...`);
+  const provisionCmd = `"${NETWORK_DIR}/scripts/provisionChannelOrderer.sh" "${ordererName}" "${ordererPort}" "${ordererAdminPort}"`;
+  const { stdout: pOut, stderr: pErr } = await execAsync(provisionCmd, {
+    env: { ...process.env, NETWORK_DIR },
+    timeout: 60000,
+  });
+  if (pOut) console.log(`[provisionOrderer:stdout] ${pOut}`);
+  if (pErr) console.error(`[provisionOrderer:stderr] ${pErr}`);
+
+  // 3. Wait for the orderer gRPC port to be ready
+  console.log(`[provisioner] Waiting for orderer ${ordererHostname} to be ready...`);
+  await new Promise(r => setTimeout(r, 8000));
+
+  // 4. Generate per-channel configtx.yaml pointing at this orderer
   console.log(`[provisioner] Generating configtx for channel ${channelName}...`);
-  const configtxDir = writeChannelConfigtx(channelName, mfgOrg, splrOrg);
+  const channelOrderer = { name: ordererName, hostname: ordererHostname, port: ordererPort, tlsCertPath: ordererTlsCert };
+  const configtxDir    = writeChannelConfigtx(channelName, mfgOrg, splrOrg, channelOrderer);
 
+  // 5. Create the channel on the per-channel orderer
   console.log(`[provisioner] Creating channel ${channelName}...`);
   const createCmd = [
     `"${NETWORK_DIR}/scripts/createChannel.sh"`,
@@ -198,6 +239,7 @@ async function createChannel(channelName, mfgOrg, splrOrg) {
     `"${mfgOrg.mspId}" "${mfgOrg.domain}" "${mfgOrg.peerName}" "${mfgOrg.peerPort}"`,
     `"${splrOrg.mspId}" "${splrOrg.domain}" "${splrOrg.peerName}" "${splrOrg.peerPort}"`,
     `"${configtxDir}"`,
+    `"${ordererHostname}" "${ordererPort}" "${ordererAdminPort}"`,
   ].join(' \\\n  ');
 
   const { stdout: chOut, stderr: chErr } = await execAsync(createCmd, {
@@ -207,12 +249,14 @@ async function createChannel(channelName, mfgOrg, splrOrg) {
   if (chOut) console.log(`[createChannel:stdout] ${chOut}`);
   if (chErr) console.error(`[createChannel:stderr] ${chErr}`);
 
+  // 6. Deploy chaincode to the channel
   console.log(`[provisioner] Deploying chaincode to ${channelName}...`);
   const deployCmd = [
     `"${NETWORK_DIR}/scripts/deployChaincode.sh"`,
     `"${channelName}"`,
     `"${mfgOrg.mspId}" "${mfgOrg.domain}" "${mfgOrg.peerName}" "${mfgOrg.peerPort}"`,
     `"${splrOrg.mspId}" "${splrOrg.domain}" "${splrOrg.peerName}" "${splrOrg.peerPort}"`,
+    `"${ordererHostname}" "${ordererPort}"`,
   ].join(' \\\n  ');
 
   const { stdout: ccOut, stderr: ccErr } = await execAsync(deployCmd, {
@@ -222,7 +266,7 @@ async function createChannel(channelName, mfgOrg, splrOrg) {
   if (ccOut) console.log(`[deployChaincode:stdout] ${ccOut}`);
   if (ccErr) console.error(`[deployChaincode:stderr] ${ccErr}`);
 
-  console.log(`[provisioner] Channel ${channelName} is ready.`);
+  console.log(`[provisioner] Channel ${channelName} is ready with dedicated orderer ${ordererHostname}.`);
 }
 
 module.exports = {

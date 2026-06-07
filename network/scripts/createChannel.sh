@@ -2,39 +2,42 @@
 set -e
 
 # Universal channel creation script.
-# Works for ANY two orgs — no hardcoding.
+# Works for ANY two orgs with their own dedicated per-channel orderer.
 # Usage:
 #   ./createChannel.sh <channelName> \
 #     <mfgMspId> <mfgDomain> <mfgPeerName> <mfgPeerPort> \
 #     <splrMspId> <splrDomain> <splrPeerName> <splrPeerPort> \
-#     <configtxDir>
+#     <configtxDir> \
+#     <ordererHostname> <ordererPort> <ordererAdminPort>
 #
-# <configtxDir> — directory containing the per-channel configtx.yaml for configtxgen.
-#                 configtxgen uses this dir; peer commands use network/config.
+# <configtxDir>      — dir containing the per-channel configtx.yaml for configtxgen
+# <ordererHostname>  — full hostname of the per-channel orderer, e.g. orderer-ch-x.veritaschain.com
+# <ordererPort>      — orderer gRPC port
+# <ordererAdminPort> — orderer admin (osnadmin) port
 
 NETWORK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DOMAIN="veritaschain.com"
 
 CHANNEL_NAME=$1
 MFG_MSP=$2  MFG_DOMAIN=$3  MFG_PEER=$4  MFG_PORT=$5
 SPLR_MSP=$6  SPLR_DOMAIN=$7  SPLR_PEER=$8  SPLR_PORT=$9
 CONFIGTX_DIR=${10}
+ORDERER_HOST=${11}
+ORDERER_PORT=${12}
+ORDERER_ADMIN_PORT=${13}
 
-if [[ -z "$CHANNEL_NAME" || -z "$MFG_MSP" || -z "$SPLR_MSP" || -z "$CONFIGTX_DIR" ]]; then
-  echo "Usage: $0 <channelName> <mfgMsp> <mfgDomain> <mfgPeerName> <mfgPeerPort> <splrMsp> <splrDomain> <splrPeerName> <splrPeerPort> <configtxDir>"
+if [[ -z "$CHANNEL_NAME" || -z "$MFG_MSP" || -z "$SPLR_MSP" || -z "$CONFIGTX_DIR" || -z "$ORDERER_HOST" ]]; then
+  echo "Usage: $0 <channelName> <mfgMsp> <mfgDomain> <mfgPeerName> <mfgPeerPort> <splrMsp> <splrDomain> <splrPeerName> <splrPeerPort> <configtxDir> <ordererHostname> <ordererPort> <ordererAdminPort>"
   exit 1
 fi
 
-# Profile name: ch-voltride-battery → ChVoltrideB attery (all segments capitalized, dashes removed)
+# Profile name: ch-tatamotors-exide → ChTatamotorsExide
 PROFILE=$(python3 -c "s='${CHANNEL_NAME}'; print(''.join(w.capitalize() for w in s.split('-')))")
 
-ORDERER_DOMAIN=$(python3 -c "import json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['domain'])")
-ORDERER_HOST=$(python3 -c "import json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['orderer']['name'])")
-ORDERER_ADMIN_PORT=$(python3 -c "import json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['orderer']['adminPort'])")
-ORDERER_PORT=$(python3 -c "import json; p=json.load(open('${NETWORK_DIR}/config/platform.json')); print(p['orderer']['port'])")
-
-ORDERER_CA=${NETWORK_DIR}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/${ORDERER_HOST}.${ORDERER_DOMAIN}/tls/ca.crt
-ORDERER_SIGN_CERT=${NETWORK_DIR}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/${ORDERER_HOST}.${ORDERER_DOMAIN}/tls/server.crt
-ORDERER_KEY=${NETWORK_DIR}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/${ORDERER_HOST}.${ORDERER_DOMAIN}/tls/server.key
+# Per-channel orderer cert paths (all enrolled from the same orderer CA)
+ORDERER_CA="${NETWORK_DIR}/organizations/ordererOrganizations/${DOMAIN}/orderers/${ORDERER_HOST}/tls/ca.crt"
+ORDERER_SIGN_CERT="${NETWORK_DIR}/organizations/ordererOrganizations/${DOMAIN}/orderers/${ORDERER_HOST}/tls/server.crt"
+ORDERER_KEY="${NETWORK_DIR}/organizations/ordererOrganizations/${DOMAIN}/orderers/${ORDERER_HOST}/tls/server.key"
 
 MFG_TLS=${NETWORK_DIR}/organizations/peerOrganizations/${MFG_DOMAIN}/peers/${MFG_PEER}.${MFG_DOMAIN}/tls/ca.crt
 SPLR_TLS=${NETWORK_DIR}/organizations/peerOrganizations/${SPLR_DOMAIN}/peers/${SPLR_PEER}.${SPLR_DOMAIN}/tls/ca.crt
@@ -78,21 +81,33 @@ sleep 2
 # Switch to network/config for peer CLI commands
 export FABRIC_CFG_PATH="${NETWORK_DIR}/config"
 
+joinPeer() {
+  local OUT RC
+  set +e
+  OUT=$(peer channel join -b "${NETWORK_DIR}/channel-artifacts/${CHANNEL_NAME}.block" \
+    --tls --cafile "${ORDERER_CA}" 2>&1)
+  RC=$?
+  set -e
+  echo "$OUT"
+  if [ $RC -ne 0 ] && ! echo "$OUT" | grep -qiE "already exists|LedgerID already exists"; then
+    echo "ERROR: peer channel join failed"
+    exit 1
+  fi
+}
+
 echo "[${CHANNEL_NAME}] Joining manufacturer peer (${MFG_PEER}.${MFG_DOMAIN}:${MFG_PORT})..."
 export CORE_PEER_LOCALMSPID="${MFG_MSP}"
 export CORE_PEER_TLS_ENABLED=true
 export CORE_PEER_TLS_ROOTCERT_FILE="${MFG_TLS}"
 export CORE_PEER_MSPCONFIGPATH="${NETWORK_DIR}/organizations/peerOrganizations/${MFG_DOMAIN}/users/Admin@${MFG_DOMAIN}/msp"
 export CORE_PEER_ADDRESS="localhost:${MFG_PORT}"
-peer channel join -b "${NETWORK_DIR}/channel-artifacts/${CHANNEL_NAME}.block" \
-  --tls --cafile "${ORDERER_CA}"
+joinPeer
 
 echo "[${CHANNEL_NAME}] Joining supplier peer (${SPLR_PEER}.${SPLR_DOMAIN}:${SPLR_PORT})..."
 export CORE_PEER_LOCALMSPID="${SPLR_MSP}"
 export CORE_PEER_TLS_ROOTCERT_FILE="${SPLR_TLS}"
 export CORE_PEER_MSPCONFIGPATH="${NETWORK_DIR}/organizations/peerOrganizations/${SPLR_DOMAIN}/users/Admin@${SPLR_DOMAIN}/msp"
 export CORE_PEER_ADDRESS="localhost:${SPLR_PORT}"
-peer channel join -b "${NETWORK_DIR}/channel-artifacts/${CHANNEL_NAME}.block" \
-  --tls --cafile "${ORDERER_CA}"
+joinPeer
 
 echo "[${CHANNEL_NAME}] Channel ready."

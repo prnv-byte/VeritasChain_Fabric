@@ -375,7 +375,3 @@ function FeedbackModal({ order, channel, myOrg, onClose, onDone, showToast }) {
     </div>
   );
 }
-
-function shortId(id) {
-  return id ? id.split('-').slice(-1)[0].toUpperCase() : '';
-}

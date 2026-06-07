@@ -45,7 +45,10 @@ export default function ChannelView({ channel, myOrg }) {
   }, [fetchOrders]);
 
   function showToast(msg, type = 'info') {
-    setToast({ msg, type });
+    const safeMsg = typeof msg === 'string' ? msg
+      : Array.isArray(msg) ? msg.map(d => (typeof d === 'string' ? d : d.message || JSON.stringify(d))).join('; ')
+      : String(msg);
+    setToast({ msg: safeMsg, type });
     setTimeout(() => setToast(null), 3500);
   }
 
