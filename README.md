@@ -215,4 +215,3 @@ The prototype runs entirely locally with Docker and shows the complete order lif
 ---
 
 *VeritasChain — Built at BIT Mesra, 2026*
-*DRDO Internship Project*
