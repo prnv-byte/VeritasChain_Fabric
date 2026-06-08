@@ -21,7 +21,11 @@ function shortId(id) {
   return id ? id.split('-').slice(-1)[0].toUpperCase() : '';
 }
 
-export default function OrderCard({ order, myOrg, channel, isMfg, isSplr, onUpdate, showToast }) {
+export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }) {
+  // Derive role from the order itself, not the channel slot.
+  // Either org on a channel can create orders, so roles flip per order.
+  const isMfg  = myOrg.mspId === order.manufacturerMSP;
+  const isSplr = myOrg.mspId === order.supplierMSP;
   const [expanded,       setExpanded]       = useState(false);
   const [showFulfill,    setShowFulfill]    = useState(false);
   const [showFeedback,   setShowFeedback]   = useState(false);

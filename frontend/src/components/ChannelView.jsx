@@ -20,9 +20,9 @@ export default function ChannelView({ channel, myOrg }) {
   const isMfg  = myOrg.id === mfgId;
   const isSplr = myOrg.id === splrId;
 
-  const partnerName = isMfg
-    ? (splrOrg?.name || 'Supplier')
-    : (mfgOrg?.name  || 'Manufacturer');
+  // The partner is always whoever is NOT the current user on this channel
+  const partnerOrg  = isMfg ? splrOrg : mfgOrg;
+  const partnerName = partnerOrg?.name || 'Partner';
 
   const fetchOrders = useCallback(async () => {
     if (channel.status !== 'active') return;
@@ -71,8 +71,8 @@ export default function ChannelView({ channel, myOrg }) {
           </p>
         </div>
 
-        {/* New Order button — only for manufacturer on active channel */}
-        {isMfg && channel.status === 'active' && (
+        {/* New Order button — any org on an active channel can initiate an order */}
+        {channel.status === 'active' && (
           <button className="btn btn-primary" onClick={() => setShowNewOrder(true)}>
             + New Order
           </button>
@@ -121,16 +121,9 @@ export default function ChannelView({ channel, myOrg }) {
               <div style={{ textAlign: 'center', padding: '80px 20px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
                 <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>No orders yet.</p>
-                {isMfg && (
-                  <button className="btn btn-primary" onClick={() => setShowNewOrder(true)}>
-                    Create First Order
-                  </button>
-                )}
-                {isSplr && (
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                    Orders from {mfgOrg?.name || 'manufacturer'} will appear here.
-                  </p>
-                )}
+                <button className="btn btn-primary" onClick={() => setShowNewOrder(true)}>
+                  Create First Order
+                </button>
               </div>
             )}
 
@@ -141,8 +134,6 @@ export default function ChannelView({ channel, myOrg }) {
                   order={order}
                   myOrg={myOrg}
                   channel={channel.channelName}
-                  isMfg={isMfg}
-                  isSplr={isSplr}
                   onUpdate={fetchOrders}
                   showToast={showToast}
                 />
@@ -157,7 +148,7 @@ export default function ChannelView({ channel, myOrg }) {
         <NewOrderModal
           channel={channel}
           myOrg={myOrg}
-          splrOrg={splrOrg}
+          partnerOrg={partnerOrg}
           onClose={() => setShowNewOrder(false)}
           onCreated={() => { setShowNewOrder(false); fetchOrders(); showToast('Order created!', 'success'); }}
           showToast={showToast}
@@ -172,7 +163,7 @@ export default function ChannelView({ channel, myOrg }) {
 
 // ── New Order Modal ──────────────────────────────────────────────────────────
 
-function NewOrderModal({ channel, myOrg, splrOrg, onClose, onCreated, showToast }) {
+function NewOrderModal({ channel, myOrg, partnerOrg, onClose, onCreated, showToast }) {
   const [form, setForm] = useState({
     componentType: '', quantity: '', specifications: '', deadline: '',
   });
@@ -193,10 +184,10 @@ function NewOrderModal({ channel, myOrg, splrOrg, onClose, onCreated, showToast 
     e.preventDefault();
     setLoading(true);
     try {
-      const splrMspId = splrOrg?.mspId || splrOrg;
+      const partnerMspId = partnerOrg?.mspId || partnerOrg;
       const result = await api.createOrder({
-        manufacturerMSP: myOrg.mspId,
-        supplierMSP:     splrMspId,
+        manufacturerMSP: myOrg.mspId,   // submitter is always the manufacturer
+        supplierMSP:     partnerMspId,  // partner is always the supplier
         componentType:   form.componentType,
         quantity:        parseInt(form.quantity, 10),
         specifications:  form.specifications,
