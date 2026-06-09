@@ -41,19 +41,21 @@ router.post('/request', async (req, res) => {
     });
 
     if (!channel) {
-      // First request — fromOrg is initiator (mfg slot), toOrg is target (splr slot)
-      const channelName = toChannelName(fromOrg, toOrg);
+      // Assign slots based on org type, not who requested first
+      const mfgOrg  = fromOrg.type === 'manufacturer' ? fromOrg : toOrg;
+      const splrOrg = fromOrg.type === 'manufacturer' ? toOrg   : fromOrg;
+      const channelName = toChannelName(mfgOrg, splrOrg);
       channel = await Channel.create({
         channelName,
-        manufacturerOrgId: fromOrg._id,
-        supplierOrgId:     toOrg._id,
-        requestedByMfg:  true,
-        requestedBySplr: false,
+        manufacturerOrgId: mfgOrg._id,
+        supplierOrgId:     splrOrg._id,
+        requestedByMfg:  fromOrg.type === 'manufacturer',
+        requestedBySplr: fromOrg.type === 'supplier',
         status: 'pending',
       });
     } else {
-      // Second request — mark the accepting side
-      const fromIsMfg = channel.manufacturerOrgId.equals(fromOrg._id);
+      // Second request — mark based on org type
+      const fromIsMfg = fromOrg.type === 'manufacturer';
       if (fromIsMfg) channel.requestedByMfg  = true;
       else           channel.requestedBySplr = true;
       await channel.save();
