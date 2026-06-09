@@ -4,6 +4,7 @@ import Landing   from './pages/Landing';
 import Register  from './pages/Register';
 import Login     from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Admin     from './pages/Admin';
 
 // Simple auth guard: redirect to /login if no org in localStorage
 function ProtectedRoute({ children }) {
@@ -26,6 +27,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/admin" element={<Admin />} />
       {/* Catch-all → landing */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

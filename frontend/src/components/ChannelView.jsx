@@ -71,8 +71,8 @@ export default function ChannelView({ channel, myOrg }) {
           </p>
         </div>
 
-        {/* New Order button — any org on an active channel can initiate an order */}
-        {channel.status === 'active' && (
+        {/* New Order button — only manufacturer can create orders */}
+        {channel.status === 'active' && isMfg && (
           <button className="btn btn-primary" onClick={() => setShowNewOrder(true)}>
             + New Order
           </button>
@@ -121,9 +121,16 @@ export default function ChannelView({ channel, myOrg }) {
               <div style={{ textAlign: 'center', padding: '80px 20px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
                 <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>No orders yet.</p>
-                <button className="btn btn-primary" onClick={() => setShowNewOrder(true)}>
-                  Create First Order
-                </button>
+                {isMfg && (
+                  <button className="btn btn-primary" onClick={() => setShowNewOrder(true)}>
+                    Create First Order
+                  </button>
+                )}
+                {isSplr && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    Waiting for manufacturer to create an order.
+                  </p>
+                )}
               </div>
             )}
 

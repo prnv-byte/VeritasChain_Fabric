@@ -95,6 +95,10 @@ export default function Landing() {
         textAlign: 'center', color: 'var(--text-muted)', fontSize: 12,
       }}>
         VeritasChain — Phase 1 &nbsp;|&nbsp; Hyperledger Fabric 2.5 &nbsp;|&nbsp; Built on VeritasChain Platform
+        &nbsp;|&nbsp;
+        <Link to="/admin" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
+          System Admin
+        </Link>
       </footer>
     </div>
   );
