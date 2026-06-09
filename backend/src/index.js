@@ -17,6 +17,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok', service: 'veritaschain-b
 app.use('/orgs',     require('./routes/orgs'));
 app.use('/channels', require('./routes/channels'));
 app.use('/orders',   require('./routes/orders'));
+app.use('/admin',    require('./routes/admin'));
 
 const PORT = process.env.PORT || 3000;
 
