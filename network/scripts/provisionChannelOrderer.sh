@@ -64,9 +64,9 @@ fabric-ca-client enroll \
   --csr.hosts "${ORDERER_HOST}" --csr.hosts localhost \
   --tls.certfiles "${CA_TLS}"
 
-cp "${ORDERER_DIR}/tls/tlscacerts/"* "${ORDERER_DIR}/tls/ca.crt"
-cp "${ORDERER_DIR}/tls/signcerts/"*   "${ORDERER_DIR}/tls/server.crt"
-cp "${ORDERER_DIR}/tls/keystore/"*_sk "${ORDERER_DIR}/tls/server.key"
+cp "$(ls -t "${ORDERER_DIR}/tls/tlscacerts/"* | head -1)"  "${ORDERER_DIR}/tls/ca.crt"
+cp "$(ls -t "${ORDERER_DIR}/tls/signcerts/"*   | head -1)"  "${ORDERER_DIR}/tls/server.crt"
+cp "$(ls -t "${ORDERER_DIR}/tls/keystore/"*_sk | head -1)"  "${ORDERER_DIR}/tls/server.key"
 
 # ── Start Docker container ────────────────────────────────────────────────────
 echo "[${ORDERER_NAME}] Starting Docker container on port ${ORDERER_PORT} (admin: ${ORDERER_ADMIN_PORT})..."
