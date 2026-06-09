@@ -16,15 +16,12 @@ network/channel-artifacts/
 
 # ── Node dependencies — install with npm install ───────────────────────────────
 node_modules/
-app/node_modules/
-api/node_modules/
 backend/node_modules/
 frontend/node_modules/
 
 # ── Lock files ─────────────────────────────────────────────────────────────────
 backend/package-lock.json
 frontend/package-lock.json
-api/package-lock.json
 
 # ── Go vendor — regenerate with: go mod vendor ────────────────────────────────
 chaincode/order/vendor/
@@ -39,8 +36,7 @@ chaincode/order/order
 # ── Environment files ─────────────────────────────────────────────────────────
 .env
 *.env
-app/*.env
-api/*.env
+backend/.env
 
 # ── OS files ───────────────────────────────────────────────────────────────────
 .DS_Store

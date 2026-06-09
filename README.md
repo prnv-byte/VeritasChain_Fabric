@@ -1,411 +1,402 @@
-# VeritasChain — Industrial B2B Blockchain on Hyperledger Fabric 2.5
+# VoltRide-Network — VeritasChain Platform
 
-A permissioned blockchain platform where manufacturers and suppliers can register, open private supply chain channels, create orders, and verify component quality using ZK proofs — without exposing trade secrets to anyone outside the channel.
-
----
-
-## Team
-
-| Module | Owner |
-|---|---|
-| Hyperledger Fabric Network + Backend API | @vrd-cse |
-| ZK Verifier + ZKML Model | Pranav |
-| React.js Frontend + Dashboard | Pranav |
+A Hyperledger Fabric 2.5 blockchain platform for EV supply chain management. Manufacturers and suppliers connect through private channels, create orders, fulfill them with ZK proof attachments, and verify them — all recorded immutably on-chain.
 
 ---
 
-## How It Works
+## Architecture
 
 ```
-1. Register   — Any org registers. Gets a cryptographic identity (MSP) on Fabric.
-2. Connect    — Two orgs request a channel with each other. When both accept,
-                a private Fabric channel + dedicated orderer is provisioned automatically.
-3. Order      — Manufacturer creates an order on-chain: component, specs, quantity, deadline.
-4. Fulfill    — Supplier runs ZK prover → uploads 4 files to AWS S3 →
-                submits URLs + SHA-256 hashes on-chain via FulfillOrder.
-5. Verify     — Manufacturer downloads files, checks hashes, runs ZK verifier locally →
-                calls VerifyAndAccept or RejectOrder.
-6. Feedback   — Manufacturer submits permanent on-chain feedback. Builds reputation.
-```
-
----
-
-## Repository Structure
-
-```
-VoltRide_project/
-├── chaincode/order/order.go      ← The blockchain smart contract (Go)
-├── network/
-│   ├── config/
-│   │   ├── platform.json         ← Orderer config (ports, chaincode name)
-│   │   ├── core.yaml             ← Peer node config
-│   │   └── orderer.yaml          ← Orderer node config
-│   ├── docker/
-│   │   ├── docker-compose-ca.yaml      ← Orderer CA container
-│   │   └── docker-compose-network.yaml ← Orderer node container
-│   └── scripts/
-│       ├── startNetwork.sh             ← Start the orderer (run once)
-│       ├── resetNetwork.sh             ← Wipe everything and start fresh
-│       ├── provisionOrg.sh             ← Enroll a new org's identity
-│       ├── provisionChannelOrderer.sh  ← Start a per-channel orderer
-│       ├── createChannel.sh            ← Create a private channel
-│       └── deployChaincode.sh          ← Deploy veritasorder chaincode
-├── backend/
-│   ├── src/
-│   │   ├── index.js              ← Express entry point (port 3000)
-│   │   ├── routes/
-│   │   │   ├── orgs.js           ← POST /orgs/register, GET /orgs
-│   │   │   ├── channels.js       ← POST /channels/request, GET /channels
-│   │   │   └── orders.js         ← All order endpoints (see API section)
-│   │   ├── fabric/
-│   │   │   ├── gateway.js        ← Fabric Gateway SDK connection
-│   │   │   ├── provisioner.js    ← Dynamic org/channel/orderer provisioning
-│   │   │   ├── configGenerator.js← Generates configtx.yaml per channel
-│   │   │   └── portManager.js    ← Dynamic port assignment for containers
-│   │   ├── models/
-│   │   │   ├── Org.js            ← MongoDB schema for orgs
-│   │   │   └── Channel.js        ← MongoDB schema for channels
-│   │   └── config/db.js          ← MongoDB connection
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── api/client.js         ← All fetch() calls in one place
-│   │   ├── pages/
-│   │   │   ├── Landing.jsx
-│   │   │   ├── Register.jsx
-│   │   │   ├── Login.jsx
-│   │   │   └── Dashboard.jsx
-│   │   └── components/
-│   │       ├── Discover.jsx      ← Find orgs, request channels
-│   │       ├── ChannelView.jsx   ← Orders list, new order modal
-│   │       └── OrderCard.jsx     ← Fulfill / Accept / Reject / Feedback
-│   ├── package.json
-│   └── vite.config.js            ← Proxy: /orders → localhost:3000
-└── docker-compose-platform.yaml  ← Starts MongoDB only
+┌─────────────────────────────────────────────────────────────┐
+│                    Frontend (React/Vite)                     │
+│                    http://localhost:4000                     │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ HTTP (Vite proxy)
+┌──────────────────────────▼──────────────────────────────────┐
+│                  Backend (Node.js/Express)                   │
+│                    http://localhost:3000                     │
+│                                                              │
+│   ┌──────────────────┐        ┌───────────────────────────┐ │
+│   │  MongoDB Atlas   │        │   Hyperledger Fabric 2.5  │ │
+│   │  (cloud)         │        │   (local Docker)          │ │
+│   │                  │        │                           │ │
+│   │  - Orgs          │        │  - Orders (on-chain)      │ │
+│   │  - Channels      │        │  - Fulfillments           │ │
+│   │  - Platform meta │        │  - Verifications          │ │
+│   └──────────────────┘        │  - Feedback               │ │
+│                               └───────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Prerequisites
 
-Install all of these before running anything:
+Install ALL of these before running the project.
 
-| Tool | Version | Install |
-|---|---|---|
-| Docker | 24+ | https://docs.docker.com/get-docker |
-| Docker Compose | v2 | included with Docker Desktop |
-| Node.js | 18+ | https://nodejs.org |
-| Go | 1.21+ | https://go.dev/dl |
-| Fabric binaries | 2.5 | see below |
+### 1. Docker
+```bash
+docker --version        # Docker 24+
+docker compose version  # Docker Compose v2+
+```
 
-**Install Hyperledger Fabric 2.5 binaries** (peer, orderer, configtxgen, osnadmin, fabric-ca-client):
+### 2. Node.js
+```bash
+node --version   # v18+
+npm --version    # v9+
+```
+
+### 3. Go
+```bash
+go version   # go1.21+
+```
+
+### 4. Hyperledger Fabric Binaries
+
+The following binaries must be available in your PATH:
+`peer`, `orderer`, `configtxgen`, `configtxlator`, `osnadmin`, `fabric-ca-client`
+
+Install them:
 ```bash
 curl -sSL https://bit.ly/2ysbOFE | bash -s -- 2.5.0 1.5.7
-# This downloads binaries into ./bin/ — add to PATH:
-export PATH=$PWD/bin:$PATH
 ```
-Or download manually from https://github.com/hyperledger/fabric/releases/tag/v2.5.0
 
-**Pull Docker images:**
+Add to PATH in your `~/.bashrc` or `~/.zshrc`:
 ```bash
-docker pull hyperledger/fabric-peer:2.5
-docker pull hyperledger/fabric-orderer:2.5
-docker pull hyperledger/fabric-ca:latest
+export PATH=$PATH:/path/to/fabric-samples/bin
+```
+
+Verify:
+```bash
+peer version
+fabric-ca-client version
+configtxgen --version
+```
+
+### 5. Python3
+```bash
+python3 --version   # 3.8+
+```
+
+### 6. MongoDB Compass (optional — to view Atlas data visually)
+Download from: https://www.mongodb.com/try/download/compass
+
+---
+
+## MongoDB Atlas Setup
+
+The platform uses MongoDB Atlas (cloud) to store org and channel metadata.
+
+1. Go to https://www.mongodb.com/atlas → Sign up free
+2. Create a free **M0 cluster**
+3. Go to **Database Access** → Add a database user (set username + password)
+4. Go to **Network Access** → Add IP → Allow access from anywhere (`0.0.0.0/0`)
+5. Go to your cluster → **Connect** → **Drivers** → copy the connection string
+
+Connection string looks like:
+```
+mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/
 ```
 
 ---
 
-## Running the Platform
-
-### Step 1 — Clone and install dependencies
-
-```bash
-git clone https://github.com/vrd-cse/VoltRide_project.git
-cd VoltRide_project
-
-# Backend
-cd backend && npm install && cd ..
-
-# Frontend
-cd frontend && npm install && cd ..
-```
-
-### Step 2 — Start MongoDB
-
-```bash
-docker-compose -f docker-compose-platform.yaml up -d
-```
-
-MongoDB runs on port 27017. This is where org metadata and channel records are stored.
-
-### Step 3 — Create the Docker network
-
-```bash
-docker network create veritaschain
-```
-
-All Fabric containers (peers, orderers, CAs) run on this network.
-
-### Step 4 — Start the Fabric orderer
-
-```bash
-cd network
-./scripts/startNetwork.sh
-cd ..
-```
-
-This starts the root orderer CA and the shared orderer node. **Run this only once.** It wipes and rebuilds the `organizations/` directory.
-
-### Step 5 — Start the backend
+## Environment Setup
 
 ```bash
 cd backend
-npm run dev
+cp .env.example .env
 ```
 
-Backend runs on **port 3000**. Uses nodemon — auto-restarts on file changes.
+Open `.env` and fill in your values:
 
-### Step 6 — Start the frontend
+```env
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/veritaschain
+PORT=3000
+PLATFORM_SECRET=veritaschain_2626
+ADMIN_KEY=vc_admin_secret_2626
+```
+
+> **Important:** All team members must use the **same `PLATFORM_SECRET`** so org identifiers match across systems.
+
+---
+
+## Running the Project
+
+Open **3 separate terminals**.
+
+### Terminal 1 — Start Fabric Network
+
+```bash
+cd network
+sudo bash scripts/startNetwork.sh
+```
+
+Wait until you see:
+```
+Orderer ready. Register orgs via API.
+Orderer gRPC : localhost:7050
+Orderer admin: localhost:7053
+```
+
+### Terminal 2 — Start Backend
+
+```bash
+cd backend
+npm install       # first time only
+npm start
+```
+
+Wait until you see:
+```
+MongoDB connected: mongodb+srv://...
+VeritasChain backend running on port 3000
+```
+
+### Terminal 3 — Start Frontend
 
 ```bash
 cd frontend
+npm install       # first time only
 npm run dev
 ```
 
-Frontend runs on **http://localhost:5173**
+Open browser at: **http://localhost:4000**
 
 ---
 
-## To Start Fresh (wipe everything and restart)
+## Using the Platform
+
+### Step 1: Register Organizations
+
+- Go to `http://localhost:4000/register`
+- Register a **Manufacturer** org (type: manufacturer)
+- Register a **Supplier** org (type: supplier)
+- Wait ~30-40 seconds for each org to show `active` status
+
+### Step 2: Create a Channel
+
+- Log in as **Manufacturer** → Discover → find Supplier → click **Request Channel**
+- Log out → Log in as **Supplier** → Discover → find Manufacturer → click **Accept Channel**
+- Wait ~3-5 minutes for channel to become `active`
+
+### Step 3: Create an Order (Manufacturer only)
+
+- Log in as **Manufacturer** → open the active channel
+- Click **+ New Order** → fill in details → **Create Order**
+
+### Step 4: Fulfill the Order (Supplier only)
+
+- Log in as **Supplier** → open the active channel
+- Find the PENDING order → click **Fulfill Order**
+- Fill in Batch ID, ZK proof URLs and SHA-256 hashes
+- Click **"Fill demo values"** to auto-fill for testing → **Submit Fulfillment**
+
+### Step 5: Verify or Reject (Manufacturer only)
+
+- Log in as **Manufacturer** → find the FULFILLED order
+- Click **Accept** or **Reject** (with reason)
+
+### Step 6: Add Feedback (Manufacturer)
+
+- After Accept/Reject → click **Add Feedback**
+
+---
+
+## Admin Panel
+
+Access the admin control panel at:
+```
+http://localhost:4000/admin
+```
+
+Or click **System Admin** in the footer of the landing page.
+
+**Login key:** `vc_admin_secret_2626`
+> Change this in `backend/.env` → `ADMIN_KEY`
+
+| Action | Effect |
+|--------|--------|
+| **Ban** org | Removes from platform login instantly. Reversible. |
+| **Full Eviction** | Removes from Fabric + revokes certs + stops containers. Irreversible. |
+| **Restore Access** | Unbans a banned org |
+| **Remove Channel** | Deletes channel from platform |
+
+---
+
+## Port Reference
+
+| Service | Port |
+|---------|------|
+| Frontend (React) | 4000 |
+| Backend (Node.js) | 3000 |
+| Fabric Orderer gRPC | 7050 |
+| Fabric Orderer Admin | 7053 |
+| Orderer CA | 11054 |
+| Org CA (first org) | 7054 |
+| Org Peer (first org) | 7051 |
+| Per-channel Orderer | 8050+ |
+| MongoDB Atlas | Cloud |
+
+---
+
+## Stopping the Network
 
 ```bash
-cd network && ./scripts/resetNetwork.sh && cd ..
+cd network
+sudo bash scripts/stopNetwork.sh
 ```
 
-Then delete the MongoDB org/channel data:
+Stop backend and frontend with `Ctrl+C` in their terminals.
+
+---
+
+## Full Reset (Wipe Everything and Start Fresh)
+
 ```bash
-# Connect to mongo and drop the collections, or just restart with a fresh DB
-docker-compose -f docker-compose-platform.yaml down -v
-docker-compose -f docker-compose-platform.yaml up -d
+# 1. Wipe Fabric network (containers + crypto + ledger)
+cd network
+sudo bash scripts/resetNetwork.sh
+
+# 2. Clean Docker garbage
+docker container prune -f
+
+# 3. Wipe Atlas database
+cd ../backend
+node -e "
+require('dotenv').config();
+const mongoose = require('mongoose');
+mongoose.connect(process.env.MONGODB_URI).then(async () => {
+  await mongoose.connection.db.dropDatabase();
+  console.log('Atlas cleared');
+  process.exit(0);
+});
+"
 ```
 
-Then redo Steps 2–6 above.
+After this, start again from Terminal 1.
 
 ---
 
-## API Reference
-
-Base URL: `http://localhost:3000`
-
-### Org endpoints
+## Project Structure
 
 ```
-POST /orgs/register
-Body: {
-  "name":        "Tata Motors",
-  "type":        "manufacturer",     // "manufacturer" or "supplier"
-  "whatTheyMake": "EV chassis",
-  "address":     "Mumbai, India",
-  "contact":     "tata@example.com"
-}
-→ Returns org object. fabricStatus goes: pending → provisioning → active (~30s)
-
-GET /orgs?status=active
-→ Returns array of all active orgs
-```
-
-### Channel endpoints
-
-```
-POST /channels/request
-Body: { "fromOrgId": "<mongoId>", "toOrgId": "<mongoId>" }
-→ Records the request. When BOTH orgs request each other:
-  a new orderer + peer channel is provisioned automatically (~2 min)
-
-GET /channels?orgId=<mongoId>
-→ Returns all channels for that org (populated with partner org details)
-```
-
-### Order endpoints
-
-```
-POST /orders
-Body: {
-  "channel":        "ch-tatamotors-exide",
-  "mspId":          "TataMotorsMSP",
-  "orderID":        "ORD-2026-001",
-  "quantity":       500,
-  "componentType":  "battery",
-  "specifications": "{\"capacity\":\"100kWh\",\"voltage\":\"400V\"}",
-  "supplierMSP":    "ExideMSP",
-  "deadline":       "2026-07-01T00:00:00Z"
-}
-
-GET /orders?channel=ch-tatamotors-exide&mspId=TataMotorsMSP
-→ Returns all orders on that channel
-
-GET /orders/:id?channel=ch-tatamotors-exide&mspId=TataMotorsMSP
-→ Returns single order
-
-GET /orders/:id/history?channel=ch-tatamotors-exide&mspId=TataMotorsMSP
-→ Returns full audit trail (every state change, who made it, when)
-```
-
-### ZK Proof endpoints (Pranav's integration)
-
-```
-POST /orders/:id/fulfill
-Body: {
-  "channel":      "ch-tatamotors-exide",
-  "mspId":        "ExideMSP",
-  "batchID":      "BATCH-2026-001",
-
-  "vkURL":        "https://s3.amazonaws.com/.../circuit.vk",
-  "pfURL":        "https://s3.amazonaws.com/.../proof.pf",
-  "srhURL":       "https://s3.amazonaws.com/.../signals.srh",
-  "settingsURL":  "https://s3.amazonaws.com/.../settings.json",
-
-  "vkHash":       "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-  "pfHash":       "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-  "srhHash":      "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-  "settingsHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-}
-→ Order status: PENDING → FULFILLED
-  The 4 hashes are the tamper-evident seal stored immutably on-chain.
-
-POST /orders/:id/verify
-Body: { "channel": "ch-tatamotors-exide", "mspId": "TataMotorsMSP" }
-→ Order status: FULFILLED → ACCEPTED
-
-POST /orders/:id/reject
-Body: { "channel": "ch-tatamotors-exide", "mspId": "TataMotorsMSP", "reason": "ZK proof failed" }
-→ Order status: FULFILLED → REJECTED
-
-POST /orders/:id/feedback
-Body: { "channel": "ch-tatamotors-exide", "mspId": "TataMotorsMSP", "feedbackText": "On time delivery, quality meets spec." }
-→ Permanent on-chain feedback (can only be submitted once, on ACCEPTED or REJECTED)
+VoltRide-Network/
+├── backend/
+│   ├── .env.example                 # Copy to .env and fill in values
+│   └── src/
+│       ├── config/db.js             # MongoDB Atlas connection
+│       ├── fabric/
+│       │   ├── gateway.js           # Fabric Gateway SDK connection
+│       │   ├── provisioner.js       # Org + channel provisioning
+│       │   ├── configGenerator.js   # Generates per-channel configtx.yaml
+│       │   └── portManager.js       # Dynamic port assignment
+│       ├── models/
+│       │   ├── Org.js               # Organization schema
+│       │   └── Channel.js           # Channel schema
+│       └── routes/
+│           ├── orgs.js              # POST /orgs/register, GET /orgs
+│           ├── channels.js          # POST /channels/request, GET /channels
+│           ├── orders.js            # All order lifecycle routes
+│           └── admin.js             # Admin-only routes (key protected)
+│
+├── frontend/
+│   └── src/
+│       ├── pages/
+│       │   ├── Landing.jsx          # Home page
+│       │   ├── Register.jsx         # Org registration form
+│       │   ├── Login.jsx            # Org selection / login
+│       │   ├── Dashboard.jsx        # Main app dashboard
+│       │   └── Admin.jsx            # Admin control panel
+│       └── components/
+│           ├── ChannelView.jsx      # Channel + orders view
+│           ├── Discover.jsx         # Find orgs + request channels
+│           └── OrderCard.jsx        # Single order with all actions
+│
+├── chaincode/order/
+│   └── order.go                     # Go chaincode: Create→Fulfill→Verify→Feedback
+│
+└── network/
+    ├── config/
+    │   ├── core.yaml                # Peer configuration
+    │   ├── orderer.yaml             # Orderer configuration
+    │   └── platform.json            # Chaincode + orderer settings
+    ├── docker/
+    │   ├── docker-compose-network.yaml   # Orderer container
+    │   └── docker-compose-ca.yaml        # Orderer CA container
+    └── scripts/
+        ├── startNetwork.sh          # Start orderer + CA
+        ├── stopNetwork.sh           # Stop all containers
+        ├── resetNetwork.sh          # Wipe everything
+        ├── provisionOrg.sh          # Enroll org identity
+        ├── provisionChannelOrderer.sh   # Enroll per-channel orderer
+        ├── createChannel.sh         # Create Fabric channel
+        ├── deployChaincode.sh       # Install + approve + commit chaincode
+        └── removeOrg.sh             # Admin: full org eviction from network
 ```
 
 ---
 
-## ZK Proof Integration — What Pranav Needs to Do
+## Troubleshooting
 
-The FulfillOrder call is where the ZK system connects to the blockchain.
+### Backend won't connect to MongoDB
+- Check `MONGODB_URI` in `.env`
+- Ensure Atlas Network Access allows `0.0.0.0/0`
+- Restart backend after editing `.env`
 
-### The 4 ZK files
-
-| File | What it is |
-|---|---|
-| `.vk` | Verification key — the circuit's public parameters |
-| `.pf` | Proof file — the ZK proof that the batch meets spec |
-| `.srh` | Public signals — the public inputs to the proof |
-| `settings.json` | Circuit settings / parameters |
-
-All 4 are public — safe to upload to S3. The proof mathematically shows the batch meets the spec without revealing raw production data.
-
-### Pranav's workflow
-
-```python
-# 1. Get the PENDING order
-order = GET /orders?channel=ch-tatamotors-exide&mspId=ExideMSP
-# Filter: order["status"] == "PENDING"
-
-# 2. Read specifications from the order
-specs = json.loads(order["specifications"])  
-# e.g. {"capacity": "100kWh", "voltage": "400V", "SOH_min": "95%"}
-
-# 3. Run ML model on the batch to get production metrics
-metrics = ml_model.run(batch_data)
-
-# 4. Run ZK prover
-vk, pf, srh, settings = zk_prover.prove(circuit, metrics, specs)
-
-# 5. Upload all 4 files to S3
-vk_url  = s3.upload("circuit.vk",    vk)
-pf_url  = s3.upload("proof.pf",      pf)
-srh_url = s3.upload("signals.srh",   srh)
-set_url = s3.upload("settings.json", settings)
-
-# 6. Compute SHA-256 of each file
-vk_hash  = sha256(vk)
-pf_hash  = sha256(pf)
-srh_hash = sha256(srh)
-set_hash = sha256(settings)
-
-# 7. Submit to blockchain — this is the only call Pranav makes to the API
-POST /orders/{order["orderID"]}/fulfill
-{
-  "channel": "ch-tatamotors-exide",
-  "mspId":   "ExideMSP",
-  "batchID": "BATCH-2026-001",
-  "vkURL": vk_url,   "pfURL": pf_url,   "srhURL": srh_url,   "settingsURL": set_url,
-  "vkHash": vk_hash, "pfHash": pf_hash, "srhHash": srh_hash, "settingsHash": set_hash
-}
+### Org stuck in "provisioning" after backend restart
+- Backend resets any `provisioning` org to `failed` on startup (safety mechanism)
+- If Docker containers for that org are running, manually set status to active:
+```bash
+cd backend
+node -e "
+require('dotenv').config();
+const mongoose = require('mongoose');
+mongoose.connect(process.env.MONGODB_URI).then(async () => {
+  const Org = require('./src/models/Org');
+  await Org.updateMany({ fabricStatus: 'failed' }, { fabricStatus: 'active' });
+  console.log('Done'); process.exit(0);
+});
+"
 ```
 
-### What the chaincode validates
-- All 4 URLs must start with `https://`
-- All 4 hashes must be exactly 64 hexadecimal characters (SHA-256)
-- Caller's MSP must match the `supplierMSP` on the order
-- Order must be in PENDING status
+### Channel stuck on "Retry Channel"
+- Check backend terminal for exact error message
+- Most common cause: stale files from a previous failed run
+- Fix: do a full reset and start fresh
+
+### Port already in use
+```bash
+sudo ss -tlnp | grep <port>
+sudo kill -9 <pid>
+```
+
+### Docker containers from previous run blocking startup
+```bash
+docker container prune -f
+```
 
 ---
 
-## The Order Data Structure
+## Data Storage
 
-Every order on-chain looks like this:
+| Data | Stored In | Wiped By |
+|------|-----------|---------|
+| Orders, verifications, feedback | Fabric ledger (Docker volumes) | `resetNetwork.sh` |
+| Org registrations, channels | MongoDB Atlas (cloud) | Dropping the database |
+| Certificates, keys | `network/organizations/` | `resetNetwork.sh` |
 
-```json
-{
-  "orderID":        "ORD-2026-001",
-  "manufacturerMSP": "TataMotorsMSP",
-  "supplierMSP":     "ExideMSP",
-  "componentType":   "battery",
-  "quantity":        500,
-  "specifications":  "{\"capacity\":\"100kWh\"}",
-  "deadline":        "2026-07-01T00:00:00Z",
-  "status":          "PENDING",
-  "createdAt":       "2026-06-07T10:00:00Z",
-
-  "batchID":         "",
-  "vkURL":           "",
-  "pfURL":           "",
-  "srhURL":          "",
-  "settingsURL":     "",
-  "vkHash":          "",
-  "pfHash":          "",
-  "srhHash":         "",
-  "settingsHash":    "",
-  "fulfilledAt":     "",
-
-  "verificationResult": "",
-  "rejectionReason":    "",
-  "verifiedBy":         "",
-  "verifiedAt":         "",
-
-  "feedbackText":    "",
-  "feedbackAt":      ""
-}
-```
-
-Status lifecycle: `PENDING → FULFILLED → ACCEPTED / REJECTED → (feedback added)`
+> Blockchain data (orders) is **immutable** — it cannot be selectively deleted. Only a full network reset wipes it.
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
+|-------|-----------|
 | Blockchain | Hyperledger Fabric 2.5 |
-| Consensus | Raft (one dedicated orderer per channel) |
-| Smart Contracts | Go — `fabric-contract-api-go` |
-| Infrastructure | Docker (containers started dynamically) |
-| Off-chain DB | MongoDB (org + channel metadata) |
-| Off-chain Storage | AWS S3 (ZK proof files) |
-| Platform Backend | Node.js + Express (port 3000) |
-| Frontend | React 18 + Vite (port 5173) |
-| ZK Proofs | ZKML — Pranav's module |
-
----
-
-*VeritasChain — Built at BIT Mesra, 2026*
+| Smart Contract | Go (fabric-contract-api-go) |
+| Backend API | Node.js + Express |
+| Database | MongoDB Atlas + Mongoose |
+| Frontend | React 18 + Vite |
+| Routing | React Router v6 |
+| Fabric SDK | @hyperledger/fabric-gateway v1.4 |

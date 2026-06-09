@@ -2,7 +2,8 @@
 
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const path = require('path');
+const path  = require('path');
+const crypto = require('crypto');
 const fs   = require('fs');
 
 const execAsync = promisify(exec);
@@ -12,17 +13,28 @@ const DOMAIN = 'veritaschain.com';
 
 // ── Name transforms ───────────────────────────────────────────────────────────
 
-/** "Tata Motors" → "TataMotorsMSP" */
+
 function toMspId(orgName) {
-  return orgName.replace(/[^a-zA-Z0-9]/g, '') + 'MSP';
+  let slug = orgName.trim().replace(/[^a-zA-Z0-9]/g, '');
+  if (/^[^A-Za-z]/.test(slug)) slug = 'Org' +slug;
+  slug = slug.substring(0,10);
+  const input = 
+  `${slug} | ${Date.now()}|${process.env.PLATFORM_SECRET||'veritas_default'}`;
+  const hash  = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
+  return `${slug}${hash}MSP`;
+
 }
 
-/** "Tata Motors" → "tatamotors.veritaschain.com" */
+
 function toDomain(orgName) {
-  return orgName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.' + DOMAIN;
+  let slug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+  if (!slug) slug = 'org';
+  const input = `${slug}|${Date.now()}|${process.env.PLATFORM_SECRET || 'veritas_default'}`;
+  const hash  = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
+  return `${slug}${hash}.${DOMAIN}`;
 }
 
-/** "Tata Motors" → "tatamotors" */
+
 function toFolderName(orgName) {
   return orgName.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -38,7 +50,7 @@ function toChannelName(mfgOrg, splrOrg) {
 
 /** Start a Fabric CA container for an org */
 async function startCaContainer(org) {
-  const folderName = toFolderName(org.name);
+  const folderName = org.domain.replace('.' + DOMAIN, '');
   const caName     = `ca-${folderName}`;
   const orgDataDir = path.join(NETWORK_DIR, 'organizations', 'fabric-ca', folderName);
   fs.mkdirSync(orgDataDir, { recursive: true });
@@ -125,7 +137,7 @@ async function startPeerContainer(org) {
  * @param {object} org - { name, mspId, domain, caPort, peerPort, ccPort, peerName }
  */
 async function provisionOrg(org) {
-  const folderName = toFolderName(org.name);
+  const folderName = org.domain.replace('.' + DOMAIN, '');
   const caName     = `ca-${folderName}`;
 
   console.log(`[provisioner] Starting CA container for ${org.name}...`);

@@ -58,7 +58,7 @@ peer:
         broadcastTimeout: 30s
         # dialTimeout is the duration the gateway waits for a connection
         # to other network nodes.
-        dialTimeout: 2m
+        dialTimeout: 10s
 
 
     # Keepalive settings for peer server and clients
