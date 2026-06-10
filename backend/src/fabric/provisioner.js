@@ -18,8 +18,8 @@ function toMspId(orgName) {
   let slug = orgName.trim().replace(/[^a-zA-Z0-9]/g, '');
   if (/^[^A-Za-z]/.test(slug)) slug = 'Org' +slug;
   slug = slug.substring(0,10);
-  const input = 
-  `${slug} | ${Date.now()}|${process.env.PLATFORM_SECRET||'veritas_default'}`;
+  const input =
+  `${slug}|${process.env.PLATFORM_SECRET||'veritas_default'}`;
   const hash  = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
   return `${slug}${hash}MSP`;
 
@@ -29,7 +29,7 @@ function toMspId(orgName) {
 function toDomain(orgName) {
   let slug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
   if (!slug) slug = 'org';
-  const input = `${slug}|${Date.now()}|${process.env.PLATFORM_SECRET || 'veritas_default'}`;
+  const input = `${slug}|${process.env.PLATFORM_SECRET || 'veritas_default'}`;
   const hash  = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
   return `${slug}${hash}.${DOMAIN}`;
 }
