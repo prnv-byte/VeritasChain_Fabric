@@ -1,6 +1,6 @@
 module github.com/veritaschain/chaincode/order
 
-go 1.21.13
+go 1.21
 
 require github.com/hyperledger/fabric-contract-api-go v1.2.2
 
