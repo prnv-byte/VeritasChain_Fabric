@@ -12,6 +12,13 @@ export const api = {
       body: JSON.stringify(data),
     }).then(r => r.json()),
 
+  passwordSetup: (data) =>
+    fetch(`${BASE}/auth/password-setup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(r => r.json()),
+
   getOrgs: (params = {}) =>
     fetch(`${BASE}/orgs?` + new URLSearchParams(params)).then(r => r.json()),
 

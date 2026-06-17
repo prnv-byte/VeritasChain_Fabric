@@ -1,10 +1,11 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Landing   from './pages/Landing';
-import Register  from './pages/Register';
-import Login     from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Admin     from './pages/Admin';
+import Landing       from './pages/Landing';
+import Register      from './pages/Register';
+import Login         from './pages/Login';
+import PasswordSetup from './pages/PasswordSetup';
+import Dashboard     from './pages/Dashboard';
+import Admin         from './pages/Admin';
 
 // Simple auth guard: redirect to /login if no org in localStorage
 function ProtectedRoute({ children }) {
@@ -17,8 +18,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/"          element={<Landing />}   />
-      <Route path="/register"  element={<Register />}  />
-      <Route path="/login"     element={<Login />}     />
+      <Route path="/register"      element={<Register />}      />
+      <Route path="/login"         element={<Login />}         />
+      <Route path="/password-setup" element={<PasswordSetup />} />
       <Route
         path="/dashboard"
         element={

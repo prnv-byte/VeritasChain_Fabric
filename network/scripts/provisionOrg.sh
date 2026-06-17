@@ -55,18 +55,48 @@ NODEOUS
   read -ra PEER_DEFS <<< "${PEERS_STR}"
   for PEER_DEF in "${PEER_DEFS[@]}"; do
     local PEER_NAME="${PEER_DEF%%:*}"
-    fabric-ca-client register --caname ${CA_NAME} \
+    local REGISTER_OUTPUT
+    if REGISTER_OUTPUT=$(fabric-ca-client register -u https://admin:adminpw@localhost:${CA_PORT} --caname ${CA_NAME} \
       --id.name ${PEER_NAME} --id.secret ${PEER_NAME}pw --id.type peer \
-      --tls.certfiles ${CA_TLS}
+      --tls.certfiles ${CA_TLS} 2>&1); then
+      echo "${REGISTER_OUTPUT}"
+    else
+      if echo "${REGISTER_OUTPUT}" | grep -qi 'already registered'; then
+        echo "  [${DOMAIN}] Identity ${PEER_NAME} already registered, continuing."
+      else
+        echo "${REGISTER_OUTPUT}" >&2
+        return 1
+      fi
+    fi
   done
 
-  fabric-ca-client register --caname ${CA_NAME} \
+  local CLIENT_REGISTER_OUTPUT
+  if CLIENT_REGISTER_OUTPUT=$(fabric-ca-client register -u https://admin:adminpw@localhost:${CA_PORT} --caname ${CA_NAME} \
     --id.name user1 --id.secret user1pw --id.type client \
-    --tls.certfiles ${CA_TLS}
+    --tls.certfiles ${CA_TLS} 2>&1); then
+    echo "${CLIENT_REGISTER_OUTPUT}"
+  else
+    if echo "${CLIENT_REGISTER_OUTPUT}" | grep -qi 'already registered'; then
+      echo "  [${DOMAIN}] Identity user1 already registered, continuing."
+    else
+      echo "${CLIENT_REGISTER_OUTPUT}" >&2
+      return 1
+    fi
+  fi
 
-  fabric-ca-client register --caname ${CA_NAME} \
+  local ADMIN_REGISTER_OUTPUT
+  if ADMIN_REGISTER_OUTPUT=$(fabric-ca-client register -u https://admin:adminpw@localhost:${CA_PORT} --caname ${CA_NAME} \
     --id.name ${ADMIN_ID} --id.secret ${ADMIN_ID}pw --id.type admin \
-    --tls.certfiles ${CA_TLS}
+    --tls.certfiles ${CA_TLS} 2>&1); then
+    echo "${ADMIN_REGISTER_OUTPUT}"
+  else
+    if echo "${ADMIN_REGISTER_OUTPUT}" | grep -qi 'already registered'; then
+      echo "  [${DOMAIN}] Identity ${ADMIN_ID} already registered, continuing."
+    else
+      echo "${ADMIN_REGISTER_OUTPUT}" >&2
+      return 1
+    fi
+  fi
 
   echo "  [${DOMAIN}] Enrolling peers (MSP + TLS)..."
   for PEER_DEF in "${PEER_DEFS[@]}"; do
@@ -92,9 +122,9 @@ NODEOUS
       --csr.hosts ${PEER_NAME}.${DOMAIN} --csr.hosts localhost \
       --tls.certfiles ${CA_TLS}
 
-    cp ${PEER_DIR}/tls/tlscacerts/* ${PEER_DIR}/tls/ca.crt
-    cp ${PEER_DIR}/tls/signcerts/*  ${PEER_DIR}/tls/server.crt
-    cp ${PEER_DIR}/tls/keystore/*_sk ${PEER_DIR}/tls/server.key
+    cp "$(ls -t "${PEER_DIR}/tls/tlscacerts/"* | head -1)" "${PEER_DIR}/tls/ca.crt"
+    cp "${PEER_DIR}/tls/signcerts/"*  "${PEER_DIR}/tls/server.crt"
+    cp "${PEER_DIR}/tls/keystore/"*_sk "${PEER_DIR}/tls/server.key"
   done
 
   echo "  [${DOMAIN}] Enrolling admin and user identities..."

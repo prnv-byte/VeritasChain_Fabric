@@ -15,6 +15,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok', service: 'veritaschain-b
 
 // Routes
 app.use('/orgs',     require('./routes/orgs'));
+app.use('/auth',      require('./routes/auth'));
 app.use('/channels', require('./routes/channels'));
 app.use('/orders',   require('./routes/orders'));
 app.use('/admin',    require('./routes/admin'));

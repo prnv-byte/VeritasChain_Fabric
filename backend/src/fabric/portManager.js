@@ -1,5 +1,6 @@
 'use strict';
 
+const net     = require('net');
 const Org     = require('../models/Org');
 const Channel = require('../models/Channel');
 
@@ -45,11 +46,28 @@ async function getUsedPeerPorts() {
  * Starts at CA_PORT_START and increments by CA_PORT_STEP.
  * Skips reserved ports and ports already in use.
  */
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => {
+      resolve(false);
+    });
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '0.0.0.0');
+  });
+}
+
 async function assignCaPort() {
   const usedCaPorts = await getUsedCaPorts();
   let port = CA_PORT_START;
   while (true) {
-    if (!RESERVED_PORTS.has(port) && !usedCaPorts.has(port)) {
+    if (
+      !RESERVED_PORTS.has(port) &&
+      !usedCaPorts.has(port) &&
+      await isPortAvailable(port)
+    ) {
       return port;
     }
     port += CA_PORT_STEP;
@@ -70,7 +88,9 @@ async function assignPeerPort() {
     const ccPort = port + 1;
     if (
       !RESERVED_PORTS.has(port) && !usedPeerPorts.has(port) &&
-      !RESERVED_PORTS.has(ccPort) && !usedPeerPorts.has(ccPort)
+      !RESERVED_PORTS.has(ccPort) && !usedPeerPorts.has(ccPort) &&
+      await isPortAvailable(port) &&
+      await isPortAvailable(ccPort)
     ) {
       return port;
     }
