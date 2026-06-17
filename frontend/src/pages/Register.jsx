@@ -5,7 +5,7 @@ import { api } from '../api/client';
 export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: '', type: '', whatTheyMake: '', address: '', contact: '',
+    name: '', type: '', whatTheyMake: '', address: '', contact: '', email: '',
   });
   const [loading,  setLoading]  = useState(false);
   const [success,  setSuccess]  = useState(null);
@@ -51,6 +51,8 @@ export default function Register() {
             </h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.7 }}>
               <strong style={{ color: 'var(--text)' }}>{success.name}</strong> has been registered.
+              <br />
+              A password setup link has been sent to <strong>{success.email}</strong>.
               <br />
               Fabric identity is being provisioned in the background.
             </p>
@@ -141,6 +143,18 @@ export default function Register() {
                 placeholder="e.g. +91-9876543210"
                 value={form.contact}
                 onChange={set('contact')}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <input
+                className="form-input"
+                type="email"
+                placeholder="e.g. admin@company.com"
+                value={form.email}
+                onChange={set('email')}
                 required
               />
             </div>

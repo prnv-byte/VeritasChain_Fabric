@@ -16,22 +16,21 @@ const DOMAIN = 'veritaschain.com';
 
 function toMspId(orgName) {
   let slug = orgName.trim().replace(/[^a-zA-Z0-9]/g, '');
-  if (/^[^A-Za-z]/.test(slug)) slug = 'Org' +slug;
-  slug = slug.substring(0,10);
-  const input =
-  `${slug}|${process.env.PLATFORM_SECRET||'veritas_default'}`;
-  const hash  = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
-  return `${slug}${hash}MSP`;
-
+  if (/^[^A-Za-z]/.test(slug)) slug = 'Org' + slug;
+  const base = slug.substring(0, 10);
+  const input = `${slug}|${process.env.PLATFORM_SECRET || 'veritas_default'}`;
+  const hash = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
+  return `${base}${hash}MSP`;
 }
 
 
 function toDomain(orgName) {
-  let slug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+  let slug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!slug) slug = 'org';
+  const base = slug.substring(0, 10);
   const input = `${slug}|${process.env.PLATFORM_SECRET || 'veritas_default'}`;
-  const hash  = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
-  return `${slug}${hash}.${DOMAIN}`;
+  const hash = crypto.createHash('sha256').update(input).digest('hex').substring(0, 8);
+  return `${base}${hash}.${DOMAIN}`;
 }
 
 
@@ -41,8 +40,8 @@ function toFolderName(orgName) {
 
 /** Generate a channel name from two org objects */
 function toChannelName(mfgOrg, splrOrg) {
-  const mfgSlug  = mfgOrg.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const splrSlug = splrOrg.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const mfgSlug  = (mfgOrg.slug || mfgOrg.name).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const splrSlug = (splrOrg.slug || splrOrg.name).toLowerCase().replace(/[^a-z0-9]/g, '');
   return `ch-${mfgSlug}-${splrSlug}`;
 }
 
@@ -137,10 +136,33 @@ async function startPeerContainer(org) {
  * @param {object} org - { name, mspId, domain, caPort, peerPort, ccPort, peerName }
  */
 async function provisionOrg(org) {
+  if (!org || typeof org !== 'object') {
+    throw new Error('provisionOrg requires an org object');
+  }
+
+  const peerName = org.peerName || 'peer0';
+  const ccPort   = org.ccPort || (org.peerPort ? org.peerPort + 1 : undefined);
+
+  if (!org.domain) {
+    throw new Error('provisionOrg requires org.domain');
+  }
+  if (!org.caPort) {
+    throw new Error('provisionOrg requires org.caPort');
+  }
+  if (!org.peerPort) {
+    throw new Error('provisionOrg requires org.peerPort');
+  }
+  if (!ccPort) {
+    throw new Error('provisionOrg requires org.ccPort or a valid org.peerPort');
+  }
+  if (!org.mspId) {
+    throw new Error('provisionOrg requires org.mspId');
+  }
+
   const folderName = org.domain.replace('.' + DOMAIN, '');
   const caName     = `ca-${folderName}`;
 
-  console.log(`[provisioner] Starting CA container for ${org.name}...`);
+  console.log(`[provisioner] Starting CA container for ${org.name || org.slug}...`);
   await startCaContainer(org);
 
   // Wait for CA to be ready

@@ -45,14 +45,28 @@ router.post('/request', async (req, res) => {
       const mfgOrg  = fromOrg.type === 'manufacturer' ? fromOrg : toOrg;
       const splrOrg = fromOrg.type === 'manufacturer' ? toOrg   : fromOrg;
       const channelName = toChannelName(mfgOrg, splrOrg);
-      channel = await Channel.create({
-        channelName,
-        manufacturerOrgId: mfgOrg._id,
-        supplierOrgId:     splrOrg._id,
-        requestedByMfg:  fromOrg.type === 'manufacturer',
-        requestedBySplr: fromOrg.type === 'supplier',
-        status: 'pending',
-      });
+
+      try {
+        channel = await Channel.create({
+          channelName,
+          manufacturerOrgId: mfgOrg._id,
+          supplierOrgId:     splrOrg._id,
+          requestedByMfg:  fromOrg.type === 'manufacturer',
+          requestedBySplr: fromOrg.type === 'supplier',
+          status: 'pending',
+        });
+      } catch (err) {
+        if (err.code === 11000 && err.keyPattern && err.keyPattern.channelName) {
+          channel = await Channel.findOne({ channelName });
+          if (!channel) throw err;
+          const fromIsMfg = fromOrg.type === 'manufacturer';
+          if (fromIsMfg) channel.requestedByMfg  = true;
+          else           channel.requestedBySplr = true;
+          await channel.save();
+        } else {
+          throw err;
+        }
+      }
     } else {
       // Second request — mark based on org type
       const fromIsMfg = fromOrg.type === 'manufacturer';

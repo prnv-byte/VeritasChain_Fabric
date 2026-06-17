@@ -2,97 +2,133 @@
 
 const express = require('express');
 const router  = express.Router();
+const crypto  = require('crypto'); // Built-in Node.js module
 const Org     = require('../models/Org');
 const { toMspId, toDomain, toFolderName, provisionOrg } = require('../fabric/provisioner');
 const { assignCaPort, assignPeerPort } = require('../fabric/portManager');
+const { sendPasswordSetupEmail } = require('../utils/mailer');
 
 // ── POST /orgs/register ───────────────────────────────────────────────────────
-// Body: { name, type, whatTheyMake, address, contact }
 router.post('/register', async (req, res) => {
   try {
-    const { name, type, whatTheyMake, address, contact } = req.body;
+    const { name, type, whatTheyMake, address, contact, email } = req.body;
 
     // Validate required fields
-    if (!name || !type || !whatTheyMake || !address || !contact) {
+    if (!name || !type || !whatTheyMake || !address || !contact || !email) {
       return res.status(400).json({
-        error: 'All fields required: name, type, whatTheyMake, address, contact',
+        error: 'All fields required: name, type, whatTheyMake, address, contact, email',
       });
     }
     if (!['manufacturer', 'supplier'].includes(type)) {
       return res.status(400).json({ error: 'type must be "manufacturer" or "supplier"' });
     }
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+    const existingEmail = await Org.findOne({ email: normalizedEmail });
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Email address is already registered' });
+    }
 
-    // Org name must produce a valid Fabric identifier (at least 3 alphanumeric chars after stripping)
-    const cleanName = name.trim().replace(/[^a-zA-Z0-9]/g, '');
-    if (cleanName.length < 3) {
+    // Produce a baseline safe alphanumeric string for Fabric paths
+    const cleanBaseName = name.trim().replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    if (cleanBaseName.length < 3) {
       return res.status(400).json({
-        error: 'Organization name must contain at least 3 letters or digits (e.g. "Tata Motors", not "A.B.")',
+        error: 'Organization name must contain at least 3 letters or digits.',
       });
     }
 
-    // Check name uniqueness
-    const existing = await Org.findOne({ name: name.trim() });
-    if (existing) {
-      return res.status(409).json({ error: 'Organization name already registered' });
+    // Default slug matches the cleaned name.
+    let slug = cleanBaseName;
+
+    // Ensure slug uniqueness for repeated business names.
+    while (await Org.findOne({ slug })) {
+      const randomSuffix = crypto.randomBytes(2).toString('hex'); // e.g., "8f3a"
+      slug = `${cleanBaseName}-${randomSuffix}`;
     }
 
-    // Derive Fabric identity fields
-    const mspId    = toMspId(name.trim());
-    const domain   = toDomain(name.trim());
-    const caPort   = await assignCaPort();
+    // Allocate unique numeric port numbers asynchronously
+    const caPort = await assignCaPort();
     const peerPort = await assignPeerPort();
-    const ccPort   = peerPort + 1;
+    const ccPort = peerPort + 1;
     const peerName = 'peer0';
 
-    // Persist to DB first (with fabricStatus: provisioning)
-    const org = await Org.create({
-      name: name.trim(),
+    // Downstream generation parameters are completely unique to this specific slug
+    const mspId      = toMspId(slug);      
+    const domain     = toDomain(slug);     
+    const folderName = toFolderName(slug); 
+
+    // Save metadata structure into database
+    const passwordResetToken = crypto.randomBytes(32).toString('hex');
+    const passwordResetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const org = new Org({
+      name: name.trim(), // Stored display name (Duplicates permitted)
+      slug,              // Isolated routing slug (e.g. "tatamotors-a2b1")
       type,
       whatTheyMake,
       address,
       contact,
-      mspId,
-      domain,
+      email: normalizedEmail,
+      passwordResetToken,
+      passwordResetExpires,
       caPort,
       peerPort,
       ccPort,
       peerName,
-      fabricStatus: 'provisioning',
+      mspId,
+      domain,
+      folderName,
+      fabricStatus: 'registering',
     });
 
-    // Provision Fabric identity asynchronously — don't block the HTTP response
-    provisionOrg({ name: org.name, mspId, domain, caPort, peerPort, ccPort, peerName })
-      .then(() => Org.findByIdAndUpdate(org._id, { fabricStatus: 'active' }))
-      .catch(err => {
-        console.error(`[orgs] Provisioning failed for "${org.name}":`, err.message);
-        Org.findByIdAndUpdate(org._id, { fabricStatus: 'failed' }).catch(() => {});
+    await org.save();
+
+    try {
+      await sendPasswordSetupEmail(org, passwordResetToken);
+    } catch (err) {
+      console.error('[email] Failed to send password setup email for', normalizedEmail, err);
+      org.fabricStatus = 'failed';
+      await org.save();
+      return res.status(500).json({ error: 'Failed to send password setup email. Please contact support.' });
+    }
+
+    // Provision the org using a plain JS object so downstream code gets exact fields.
+    const orgPayload = org.toObject();
+    provisionOrg(orgPayload)
+      .then(async () => {
+        org.fabricStatus = 'active';
+        await org.save();
+        console.log(`[Fabric] Org ${slug} successfully active.`);
+      })
+      .catch(async (err) => {
+        console.error(`[Fabric] Provisioning failed for ${slug}:`, err);
+        org.fabricStatus = 'failed';
+        await org.save();
       });
 
-    res.status(201).json({
-      id:          org._id,
-      name:        org.name,
-      type:        org.type,
-      mspId:       org.mspId,
-      domain:      org.domain,
-      caPort:      org.caPort,
-      peerPort:    org.peerPort,
-      fabricStatus: 'provisioning',
-      message: 'Registration submitted. Fabric identity is being provisioned in the background.',
+    res.status(202).json({
+      message: 'Registration initiated successfully.',
+      orgId: org._id,
+      name: org.name,
+      email: org.email,
+      mspId: org.mspId,
+      slug: org.slug,
+      fabricStatus: org.fabricStatus,
     });
+
   } catch (err) {
-    console.error('[orgs/register]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── GET /orgs ─────────────────────────────────────────────────────────────────
-// List orgs — supports ?type=manufacturer|supplier and ?search=<name>
 router.get('/', async (req, res) => {
   try {
     const { type, search } = req.query;
     const filter = {};
 
-    // By default show all orgs; callers can filter to active only by passing ?status=active
     if (req.query.status) filter.fabricStatus = req.query.status;
     if (type) filter.type = type;
     if (search) filter.name = { $regex: search, $options: 'i' };

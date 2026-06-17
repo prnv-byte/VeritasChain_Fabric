@@ -34,7 +34,7 @@ echo "[${ORDERER_NAME}] Registering identity with orderer CA..."
 export FABRIC_CA_CLIENT_HOME="${ORG_DIR}"
 
 set +e
-OUT=$(fabric-ca-client register --caname "${CA_NAME}" \
+OUT=$(fabric-ca-client register -u "https://admin:adminpw@localhost:${CA_PORT}" --caname "${CA_NAME}" \
   --id.name "${ORDERER_NAME}" --id.secret "${ORDERER_NAME}pw" --id.type orderer \
   --tls.certfiles "${CA_TLS}" 2>&1)
 RC=$?

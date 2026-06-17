@@ -14,4 +14,13 @@ async function connectDB() {
   }
 }
 
+mongoose.connection.once('open', async () => {
+  try {
+    await mongoose.connection.db.collection('orgs').dropIndex('name_1');
+    console.log("Successfully removed old unique organization name index constraint.");
+  } catch (err) {
+    // Ignores error if index was already dropped
+  }
+});
+
 module.exports = { connectDB };

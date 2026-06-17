@@ -6,8 +6,15 @@ const OrgSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
+    // unique: true <-- Removed so multiple orgs can have the same display name
+  },
+  slug: {
+    type: String,
+    required: true,
+    unique: true, // <-- Keeps the cryptographic network details totally isolated
+    trim: true,
+    lowercase: true
   },
   type: {
     type: String,
@@ -17,51 +24,40 @@ const OrgSchema = new mongoose.Schema({
   whatTheyMake: {
     type: String,
     required: true,
-    trim: true,
   },
   address: {
     type: String,
     required: true,
-    trim: true,
   },
   contact: {
     type: String,
     required: true,
-    trim: true,
   },
-  // Fabric identity fields — set during provisioning
-  mspId: {
-    type: String,
-    unique: true,
-    sparse: true,
-  },
-  domain: {
-    type: String,
-    unique: true,
-    sparse: true,
-  },
-  caPort: {
-    type: Number,
-  },
-  peerPort: {
-    type: Number,
-  },
-  ccPort: {
-    type: Number,
-  },
+  caPort: Number,
+  peerPort: Number,
+  ccPort: Number,
   peerName: {
     type: String,
     default: 'peer0',
   },
+  email: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true,
+    unique: true,
+  },
+  passwordHash: String,
+  passwordResetToken: String,
+  passwordResetExpires: Date,
   fabricStatus: {
     type: String,
-    enum: ['pending', 'provisioning', 'active', 'failed'],
-    default: 'pending',
+    enum: ['registering', 'active', 'failed'], // <-- FIX: Changed to lowercase values to match routes
+    default: 'registering',
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  mspId: String,
+  domain: String,
+  folderName: String,
+}, { timestamps: true });
 
 module.exports = mongoose.model('Org', OrgSchema);
