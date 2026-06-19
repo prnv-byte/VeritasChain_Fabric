@@ -5,10 +5,11 @@ import { api } from '../api/client';
 export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: '', type: '', whatTheyMake: '', address: '', contact: '', email: '',
+    name: '', type: '', whatTheyMake: '', address: '', contact: '', email: '', password: '', confirmPassword: '',
   });
   const [loading,  setLoading]  = useState(false);
   const [success,  setSuccess]  = useState(null);
+  const [countdown, setCountdown] = useState(10);
   const [error,    setError]    = useState(null);
 
   function set(field) {
@@ -23,48 +24,90 @@ export default function Register() {
       setError('Name must contain at least 3 letters or digits. Remove special characters like dots, slashes, or symbols.');
       return;
     }
+
+    if (form.password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+
+    if (form.password !== form.confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await api.registerOrg(form);
       if (result.error) {
+        setLoading(false);
         setError(result.error);
       } else {
         setSuccess(result);
-        // Redirect to login after 3 seconds
-        setTimeout(() => navigate('/login'), 3000);
+        setCountdown(10);
+        // Redirect to login after 10 seconds
+        setTimeout(() => navigate('/login'), 10000);
       }
     } catch (err) {
-      setError(err.message);
-    } finally {
       setLoading(false);
+      setError(err.message);
     }
   }
 
+  // Loading screen — shown while registration is in progress
+  if (loading) {
+    return (
+      <div className="page-center">
+        <div className="page-content">
+          <div className="card" style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 20 }}>⚙️</div>
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>
+              Registering Your Organization
+            </h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.6 }}>
+              <strong>{form.name}</strong> is being registered and your Fabric identity is being provisioned.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+              <div className="spinner" style={{ borderWidth: 3, width: 32, height: 32 }} />
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>This may take a few moments...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Success screen — shown after registration completes
   if (success) {
+    // Update countdown every second
+    React.useEffect(() => {
+      const interval = setInterval(() => {
+        setCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }, []);
     return (
       <div className="page-center">
         <div className="page-content">
           <div className="card" style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
             <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12, color: 'var(--success)' }}>
-              Registration Submitted!
+              Registration Complete!
             </h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.7 }}>
               <strong style={{ color: 'var(--text)' }}>{success.name}</strong> has been registered.
               <br />
-              A password setup link has been sent to <strong>{success.email}</strong>.
-              <br />
-              Fabric identity is being provisioned in the background.
+              Your password is set and Fabric identity is being provisioned.
             </p>
             <div className="card" style={{ background: 'var(--surface2)', marginBottom: 20, textAlign: 'left' }}>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>PROVISIONING DETAILS</p>
+              <p><span style={{ color: 'var(--text-muted)' }}>Organization ID: </span><code style={{ fontSize: 13, wordBreak: 'break-all' }}>{success.orgId}</code></p>
               <p><span style={{ color: 'var(--text-muted)' }}>MSP ID: </span><code>{success.mspId}</code></p>
               <p><span style={{ color: 'var(--text-muted)' }}>Status: </span>
                 <span className="badge badge-provisioning">{success.fabricStatus}</span>
               </p>
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-              Redirecting to login in 3 seconds...
+              Redirecting to login in {countdown} second{countdown !== 1 ? 's' : ''}...
             </p>
           </div>
         </div>
@@ -155,6 +198,30 @@ export default function Register() {
                 placeholder="e.g. admin@company.com"
                 value={form.email}
                 onChange={set('email')}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input
+                className="form-input"
+                type="password"
+                placeholder="At least 8 characters"
+                value={form.password}
+                onChange={set('password')}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Confirm Password</label>
+              <input
+                className="form-input"
+                type="password"
+                placeholder="Confirm your password"
+                value={form.confirmPassword}
+                onChange={set('confirmPassword')}
                 required
               />
             </div>

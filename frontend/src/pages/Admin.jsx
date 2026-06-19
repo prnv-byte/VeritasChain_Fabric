@@ -31,7 +31,7 @@ export default function Admin() {
   const [toast,    setToast]    = useState(null);
   const [loading,  setLoading]  = useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (authed) fetchAll();
   }, [authed]);
 
@@ -60,12 +60,12 @@ export default function Admin() {
 
   async function handleLogin(e) {
     e.preventDefault();
+    setKeyError('');
     localStorage.setItem('vc_admin_key', keyInput);
     const res = await adminFetch('/admin/orgs');
     if (res.error) { handleUnauth(); return; }
     setOrgs(Array.isArray(res) ? res : []);
     setAuthed(true);
-    setKeyError('');
   }
 
   function logout() {
@@ -107,16 +107,20 @@ export default function Admin() {
     else { showToast(r.message, 'success'); fetchAll(); }
   }
 
-  // ── Login screen ─────────────────────────────────────────────────────────────
   if (!authed) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <div className="card" style={{ width: '100%', maxWidth: 400 }}>
-          <h2 style={{ fontWeight: 700, fontSize: 20, marginBottom: 6 }}>VeritasChain Admin</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
-            Enter your admin key to access the control panel.
-          </p>
-          <form onSubmit={handleLogin}>
+      <div className="page-center admin-shell">
+        <div className="glass-panel admin-hero">
+          <span className="eyebrow">Super admin access</span>
+          <h1>Platform control center</h1>
+          <p>Enter your admin key to view all registered organizations and inspect the channel topology.</p>
+        </div>
+
+        <div className="glass-card admin-card">
+          <h2>Admin Sign In</h2>
+          <p className="muted">Securely access the VeritasChain admin console.</p>
+
+          <form onSubmit={handleLogin} style={{ display: 'grid', gap: 18 }}>
             <div className="form-group">
               <label className="form-label">Admin Key</label>
               <input
@@ -127,15 +131,14 @@ export default function Admin() {
                 onChange={e => setKeyInput(e.target.value)}
                 required
               />
-              {keyError && (
-                <p style={{ color: 'var(--error)', fontSize: 12, marginTop: 6 }}>{keyError}</p>
-              )}
+              {keyError && <div className="error-panel">{keyError}</div>}
             </div>
             <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
               Login
             </button>
           </form>
-          <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+
+          <p className="muted" style={{ textAlign: 'center', marginTop: 8 }}>
             <Link to="/" style={{ color: 'var(--accent)' }}>← Back to platform</Link>
           </p>
         </div>
@@ -143,142 +146,100 @@ export default function Admin() {
     );
   }
 
-  // ── Admin panel ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', padding: '24px 20px', maxWidth: 900, margin: '0 auto' }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+    <div className="admin-shell admin-dashboard">
+      <div className="admin-header glass-panel">
         <div>
-          <h1 style={{ fontWeight: 800, fontSize: 22 }}>VeritasChain Admin</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
-            Platform control panel — manage orgs and channels
-          </p>
+          <span className="eyebrow">Admin console</span>
+          <h1>VeritasChain Superadmin</h1>
+          <p>Manage organizations and channels in one secure dashboard.</p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div className="admin-actions">
           <button className="btn btn-secondary" onClick={fetchAll}>Refresh</button>
           <button className="btn btn-secondary" onClick={logout}>Logout</button>
-          <Link to="/" className="btn btn-secondary">← Platform</Link>
+          <Link to="/" className="btn btn-secondary">Platform</Link>
         </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+      <div className="stats-grid">
         {[
           { label: 'Total Orgs',    value: orgs.length },
           { label: 'Active Orgs',   value: orgs.filter(o => o.fabricStatus === 'active').length },
           { label: 'Banned Orgs',   value: orgs.filter(o => o.fabricStatus === 'banned').length },
         ].map(s => (
-          <div key={s.label} className="card" style={{ textAlign: 'center', padding: '16px 12px' }}>
-            <div style={{ fontSize: 28, fontWeight: 800 }}>{s.value}</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>{s.label}</div>
+          <div key={s.label} className="stat-card glass-card">
+            <div className="stat-value">{s.value}</div>
+            <div className="stat-label">{s.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {['orgs', 'channels'].map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={tab === t ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-          >
-            {t === 'orgs' ? `Organizations (${orgs.length})` : `Channels (${channels.length})`}
-          </button>
-        ))}
-      </div>
+      <div className="glass-card admin-tabs">
+        <div className="tab-list">
+          {['orgs', 'channels'].map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={tab === t ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+            >
+              {t === 'orgs' ? `Organizations (${orgs.length})` : `Channels (${channels.length})`}
+            </button>
+          ))}
+        </div>
 
-      {/* Orgs tab */}
-      {tab === 'orgs' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
-          {!loading && orgs.length === 0 && (
-            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40 }}>No orgs registered yet.</p>
-          )}
-          {orgs.map(org => (
-            <div key={org._id} className="card" style={{
-              borderLeft: `3px solid ${STATUS_COLOR[org.fabricStatus] || '#64748b'}`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        {tab === 'orgs' && (
+          <div className="admin-list">
+            {loading && <p className="muted">Loading organizations...</p>}
+            {!loading && orgs.length === 0 && <p className="muted">No orgs registered yet.</p>}
+            {orgs.map(org => (
+              <div key={org._id} className="admin-item">
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700 }}>{org.name}</span>
-                    <span className={`badge badge-${org.type}`}>{org.type}</span>
-                    <span style={{
-                      fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                      background: `${STATUS_COLOR[org.fabricStatus]}22`,
-                      color: STATUS_COLOR[org.fabricStatus],
-                      fontWeight: 600,
-                    }}>
-                      {org.fabricStatus}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>{org.whatTheyMake}</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{org.mspId}</p>
+                  <div className="admin-item-title">{org.name}</div>
+                  <div className="admin-item-meta">{org.mspId}</div>
+                  <div className="admin-item-subtitle">{org.whatTheyMake}</div>
                 </div>
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div className="admin-item-actions">
                   {org.fabricStatus === 'banned' ? (
                     <button className="btn btn-success btn-sm" onClick={() => unbanOrg(org)}>
-                      Restore Access
+                      Restore
                     </button>
                   ) : (
                     <>
-                      <button className="btn btn-secondary btn-sm" onClick={() => banOrg(org)}
-                        style={{ borderColor: '#f97316', color: '#f97316' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => banOrg(org)}>
                         Ban
                       </button>
                       <button className="btn btn-danger btn-sm" onClick={() => evictOrg(org)}>
-                        Full Eviction
+                        Evict
                       </button>
                     </>
                   )}
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {/* Channels tab */}
-      {tab === 'channels' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
-          {!loading && channels.length === 0 && (
-            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40 }}>No channels yet.</p>
-          )}
-          {channels.map(ch => (
-            <div key={ch._id} className="card" style={{
-              borderLeft: `3px solid ${STATUS_COLOR[ch.status] || '#64748b'}`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        {tab === 'channels' && (
+          <div className="admin-list">
+            {loading && <p className="muted">Loading channels...</p>}
+            {!loading && channels.length === 0 && <p className="muted">No channels yet.</p>}
+            {channels.map(ch => (
+              <div key={ch._id} className="admin-item">
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 13 }}>{ch.channelName}</span>
-                    <span style={{
-                      fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                      background: `${STATUS_COLOR[ch.status]}22`,
-                      color: STATUS_COLOR[ch.status],
-                      fontWeight: 600,
-                    }}>
-                      {ch.status}
-                    </span>
-                  </div>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {ch.manufacturerOrgId?.name || 'Unknown'} ↔ {ch.supplierOrgId?.name || 'Unknown'}
-                  </p>
+                  <div className="admin-item-title">{ch.channelName}</div>
+                  <div className="admin-item-meta">{ch.status}</div>
                 </div>
-                <button className="btn btn-danger btn-sm" onClick={() => deleteChannel(ch)}>
-                  Remove
-                </button>
+                <div className="admin-item-actions">
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteChannel(ch)}>
+                    Delete
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* Toast */}
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
     </div>
   );

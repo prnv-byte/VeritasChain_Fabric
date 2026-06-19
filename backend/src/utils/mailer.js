@@ -24,9 +24,12 @@ function createTransporter() {
     });
   }
 
-  return nodemailer.createTransport({
-    jsonTransport: true,
-  });
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SMTP configuration missing in production. Set SMTP_HOST and SMTP_PORT in your environment.');
+  }
+
+  console.warn('[email] SMTP not configured, using JSON transport. Emails will not be delivered to real mailboxes.');
+  return nodemailer.createTransport({ jsonTransport: true });
 }
 
 async function sendPasswordSetupEmail(org, token) {
@@ -61,8 +64,14 @@ async function sendPasswordSetupEmail(org, token) {
 
   const info = await transporter.sendMail(mailOptions);
 
-  if (process.env.NODE_ENV !== 'production' && transporter.options && transporter.options.jsonTransport) {
-    console.log('[email] Password setup mail content:', info.message);
+  if (!SMTP_HOST || !SMTP_PORT) {
+    console.log('[email] SMTP not configured. Password setup email payload:');
+    console.log(JSON.stringify({
+      to: org.email,
+      subject: mailOptions.subject,
+      text: mailOptions.text,
+      html: mailOptions.html,
+    }, null, 2));
   }
 
   return info;

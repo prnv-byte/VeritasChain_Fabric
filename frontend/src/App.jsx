@@ -17,7 +17,8 @@ function ProtectedRoute({ children }) {
 export default function App() {
   return (
     <Routes>
-      <Route path="/"          element={<Landing />}   />
+      <Route path="/"          element={<Login />}     />
+      <Route path="/landing"   element={<Landing />}   />
       <Route path="/register"      element={<Register />}      />
       <Route path="/login"         element={<Login />}         />
       <Route path="/password-setup" element={<PasswordSetup />} />
@@ -30,7 +31,7 @@ export default function App() {
         }
       />
       <Route path="/admin" element={<Admin />} />
-      {/* Catch-all → landing */}
+      {/* Catch-all → login */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
