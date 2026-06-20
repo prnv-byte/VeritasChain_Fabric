@@ -1,24 +1,50 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import Discover     from '../components/Discover';
-import ChannelView  from '../components/ChannelView';
+import Discover          from '../components/Discover';
+import ChannelView       from '../components/ChannelView';
+import RequirementsPanel from '../components/RequirementsPanel';
+
+// Toast notification state (simple inline implementation)
+let _setToasts = null;
+export function showToast(message, type = 'info') {
+  if (_setToasts) _setToasts(prev => [...prev, { id: Date.now(), message, type }]);
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [myOrg,       setMyOrg]       = useState(null);
-  const [channels,    setChannels]    = useState([]);
-  const [view,        setView]        = useState('discover'); // 'discover' | channel._id
-  const [loadingChs,  setLoadingChs]  = useState(false);
+  const [myOrg,      setMyOrg]      = useState(null);
+  const [channels,   setChannels]   = useState([]);
+  const [view,       setView]       = useState('discover'); // 'discover' | channelId | 'req-{channelId}'
+  const [loadingChs, setLoadingChs] = useState(false);
+  const [toasts,     setToasts]     = useState([]);
 
-  // Load org from localStorage
+  // Wire up the toast helper
+  _setToasts = setToasts;
+
+  function toast(message, type = 'info') {
+    setToasts(prev => [...prev, { id: Date.now(), message, type }]);
+  }
+
+  function dismissToast(id) {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }
+
+  // Auto-dismiss toasts after 4 seconds
+  useEffect(() => {
+    if (toasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setToasts(prev => prev.slice(1));
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [toasts]);
+
   useEffect(() => {
     const raw = localStorage.getItem('vc_org');
     if (!raw) { navigate('/login'); return; }
     setMyOrg(JSON.parse(raw));
   }, [navigate]);
 
-  // Fetch channels (called on mount and every 5s)
   const fetchChannels = useCallback(async () => {
     if (!myOrg) return;
     try {
@@ -46,12 +72,19 @@ export default function Dashboard() {
 
   if (!myOrg) return null;
 
-  const activeChannel = view !== 'discover'
-    ? channels.find(c => c._id === view)
-    : null;
+  // Derive active channel for ChannelView
+  const activeChannelId = view.startsWith('req-') ? null : (view !== 'discover' ? view : null);
+  const activeChannel   = activeChannelId ? channels.find(c => c._id === activeChannelId) : null;
+
+  // Derive active channel for RequirementsPanel
+  const reqChannelId = view.startsWith('req-') ? view.slice(4) : null;
+  const reqChannel   = reqChannelId ? channels.find(c => c._id === reqChannelId) : null;
+
+  const activeChannels = channels.filter(c => c.status === 'active');
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+
       {/* ── Sidebar ── */}
       <aside style={{
         width: 240, flexShrink: 0,
@@ -59,9 +92,7 @@ export default function Dashboard() {
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Org identity */}
-        <div style={{
-          padding: '20px 16px', borderBottom: '1px solid var(--border)',
-        }}>
+        <div style={{ padding: '20px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{
             width: 40, height: 40, borderRadius: '50%',
             background: 'var(--accent)', display: 'flex', alignItems: 'center',
@@ -78,7 +109,8 @@ export default function Dashboard() {
 
         {/* Navigation */}
         <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
-          {/* Discover nav item */}
+
+          {/* Discover */}
           <SidebarItem
             label="Discover"
             icon="🔍"
@@ -86,16 +118,11 @@ export default function Dashboard() {
             onClick={() => setView('discover')}
           />
 
-          {/* My Channels section */}
-          <div style={{
-            padding: '16px 16px 6px', fontSize: 11, fontWeight: 600,
-            color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em',
-          }}>
-            My Channels {loadingChs && <span className="spinner spinner-dark" style={{ width: 10, height: 10 }} />}
-          </div>
+          {/* My Channels */}
+          <SidebarSection label="My Channels" loading={loadingChs} />
 
           {channels.length === 0 && (
-            <div style={{ padding: '8px 16px', color: 'var(--text-muted)', fontSize: 12 }}>
+            <div style={{ padding: '4px 16px 8px', color: 'var(--text-muted)', fontSize: 12 }}>
               No channels yet
             </div>
           )}
@@ -116,6 +143,30 @@ export default function Dashboard() {
               />
             );
           })}
+
+          {/* Requirements — shown only when there are active channels */}
+          {activeChannels.length > 0 && (
+            <>
+              <SidebarSection label="Requirements" />
+              {activeChannels.map(ch => {
+                const partner = ch.manufacturerOrgId?._id === myOrg.id
+                  ? ch.supplierOrgId
+                  : ch.manufacturerOrgId;
+                const partnerName = (partner && partner.name) ? partner.name : ch.channelName;
+                return (
+                  <SidebarItem
+                    key={`req-${ch._id}`}
+                    label={partnerName}
+                    sublabel={ch.channelName}
+                    icon="📋"
+                    active={view === `req-${ch._id}`}
+                    onClick={() => setView(`req-${ch._id}`)}
+                  />
+                );
+              })}
+            </>
+          )}
+
         </div>
 
         {/* Logout */}
@@ -136,17 +187,59 @@ export default function Dashboard() {
       </aside>
 
       {/* ── Main content ── */}
-      <main style={{ flex: 1, overflow: 'auto' }}>
+      <main style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
         {view === 'discover' ? (
           <Discover myOrg={myOrg} channels={channels} onChannelCreated={fetchChannels} />
+        ) : reqChannel ? (
+          <RequirementsPanel channel={reqChannel} myOrg={myOrg} showToast={toast} />
         ) : activeChannel ? (
           <ChannelView channel={activeChannel} myOrg={myOrg} />
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <p style={{ color: 'var(--text-muted)' }}>Channel not found.</p>
+            <p style={{ color: 'var(--text-muted)' }}>Select a channel or section from the sidebar.</p>
           </div>
         )}
+
+        {/* Toast notifications */}
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          display: 'flex', flexDirection: 'column', gap: 8,
+          zIndex: 9999, pointerEvents: 'none',
+        }}>
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              style={{
+                padding: '10px 16px', borderRadius: 'var(--radius)',
+                fontSize: 13, fontWeight: 500, pointerEvents: 'auto',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                background: t.type === 'success' ? '#22c55e'
+                           : t.type === 'error'   ? '#ef4444'
+                           : t.type === 'info'    ? 'var(--surface2)'
+                           : 'var(--surface2)',
+                color: (t.type === 'success' || t.type === 'error') ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+              }}
+              onClick={() => dismissToast(t.id)}
+            >
+              {t.message}
+            </div>
+          ))}
+        </div>
       </main>
+    </div>
+  );
+}
+
+// ── Sidebar helpers ───────────────────────────────────────────────────────────
+
+function SidebarSection({ label, loading }) {
+  return (
+    <div style={{
+      padding: '16px 16px 6px', fontSize: 11, fontWeight: 600,
+      color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em',
+    }}>
+      {label} {loading && <span className="spinner spinner-dark" style={{ width: 10, height: 10 }} />}
     </div>
   );
 }

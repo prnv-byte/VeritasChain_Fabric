@@ -14,10 +14,6 @@ function decodeResult(result) {
   try { return JSON.parse(raw); } catch { return raw; }
 }
 
-/**
- * Helper that opens a gateway, runs fn(contract), then closes the gateway.
- * On chaincode-level errors (GatewayError), returns 400 instead of 500.
- */
 async function withContract(mspId, channel, fn, res) {
   const { gateway, contract } = await getContract(mspId, channel, CC_NAME);
   try {
@@ -40,8 +36,6 @@ async function withContract(mspId, channel, fn, res) {
 }
 
 // ── POST /orders ──────────────────────────────────────────────────────────────
-// Body: { manufacturerMSP, supplierMSP, componentType, quantity, specifications,
-//         deadline, channel }
 router.post('/', async (req, res) => {
   try {
     const { manufacturerMSP, supplierMSP, componentType, quantity,
@@ -56,8 +50,6 @@ router.post('/', async (req, res) => {
 
     const orderID = `ORDER-${uuidv4()}`;
 
-    // Chaincode: CreateOrder(orderID, quantity, componentType, specifications, supplierMSP, deadline)
-    // manufacturerMSP is inferred from the submitter cert inside chaincode
     const result = await withContract(manufacturerMSP, channel, async (contract) => {
       await contract.submitTransaction(
         'CreateOrder',
@@ -134,31 +126,97 @@ router.get('/:id/history', async (req, res) => {
 });
 
 // ── POST /orders/:id/fulfill ──────────────────────────────────────────────────
-// Body: { channel, mspId, batchID, vkURL, pfURL, srhURL, settingsURL,
-//         vkHash, pfHash, srhHash, settingsHash }
+// Body: { channel, mspId, batchID, zkProof, publicSignals }
+// zkProof      = full content of proof.json from snarkjs (as string)
+// publicSignals = full content of public.json from snarkjs (as string)
 router.post('/:id/fulfill', async (req, res) => {
   try {
     const { id } = req.params;
-    const { channel, mspId, batchID,
-            vkURL, pfURL, srhURL, settingsURL,
-            vkHash, pfHash, srhHash, settingsHash } = req.body;
+    const { channel, mspId, batchID, zkProof, publicSignals } = req.body;
 
-    if (!channel || !mspId || !batchID ||
-        !vkURL || !pfURL || !srhURL || !settingsURL ||
-        !vkHash || !pfHash || !srhHash || !settingsHash) {
-      return res.status(400).json({ error: 'Missing required fields for fulfill' });
+    if (!channel || !mspId || !batchID || !zkProof || !publicSignals) {
+      return res.status(400).json({
+        error: 'Missing required fields: channel, mspId, batchID, zkProof, publicSignals',
+      });
     }
 
     const result = await withContract(mspId, channel, async (contract) => {
       await contract.submitTransaction(
-        'FulfillOrder', id, batchID,
-        vkURL, pfURL, srhURL, settingsURL,
-        vkHash, pfHash, srhHash, settingsHash,
+        'FulfillOrder', id, batchID, zkProof, publicSignals,
       );
       return { orderID: id, status: 'FULFILLED' };
     }, res);
 
     if (result) res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /orders/:id/run-verify ───────────────────────────────────────────────
+// Manufacturer calls this to run snarkjs.groth16.verify against the stored proof.
+// Reads proof + publicSignals from chain, reads verificationKey from requirements.
+// Body: { channel, mspId, manufacturerMSP }
+router.post('/:id/run-verify', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { channel, mspId, manufacturerMSP } = req.body;
+
+    if (!channel || !mspId || !manufacturerMSP) {
+      return res.status(400).json({ error: 'channel, mspId, and manufacturerMSP are required' });
+    }
+
+    // Step 1: read order from chain to get proof and public signals
+    const order = await withContract(mspId, channel, async (contract) => {
+      const data = await contract.evaluateTransaction('GetOrder', id);
+      return decodeResult(data);
+    }, res);
+    if (!order) return;
+
+    if (order.status !== 'FULFILLED') {
+      return res.status(400).json({ error: `Order must be FULFILLED to verify, current: ${order.status}` });
+    }
+    if (!order.zkProof || !order.publicSignals) {
+      return res.status(400).json({ error: 'Order is missing zkProof or publicSignals on chain' });
+    }
+
+    // Step 2: read requirements from chain to get verification key
+    const requirements = await withContract(mspId, channel, async (contract) => {
+      const data = await contract.evaluateTransaction('GetRequirements', manufacturerMSP);
+      return decodeResult(data);
+    }, res);
+    if (!requirements) return;
+
+    if (!requirements.verificationKey) {
+      return res.status(400).json({ error: 'No verification key found in requirements. Manufacturer must set requirements first.' });
+    }
+
+    // Step 3: parse the JSON file contents stored on chain
+    let proof, publicSignals, vkey;
+    try {
+      proof         = JSON.parse(order.zkProof);
+      publicSignals = JSON.parse(order.publicSignals);
+      vkey          = JSON.parse(requirements.verificationKey);
+    } catch (parseErr) {
+      return res.status(400).json({ error: `Failed to parse proof/signals/vkey JSON: ${parseErr.message}` });
+    }
+
+    // Step 4: run snarkjs verification
+    // snarkjs is ESM-only in newer versions, use dynamic import
+    let isValid;
+    try {
+      const snarkjs = await import('snarkjs');
+      isValid = await snarkjs.groth16.verify(vkey, publicSignals, proof);
+    } catch (snarkErr) {
+      if (snarkErr.code === 'ERR_MODULE_NOT_FOUND' || snarkErr.message.includes('Cannot find module')) {
+        return res.status(500).json({
+          error: 'snarkjs is not installed. Run: cd backend && npm install snarkjs',
+        });
+      }
+      return res.status(500).json({ error: `Verification failed: ${snarkErr.message}` });
+    }
+
+    res.json({ valid: isValid, orderID: id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -186,7 +244,6 @@ router.post('/:id/verify', async (req, res) => {
 });
 
 // ── POST /orders/:id/reject ───────────────────────────────────────────────────
-// Body: { channel, mspId, reason }
 router.post('/:id/reject', async (req, res) => {
   try {
     const { id } = req.params;
@@ -207,7 +264,6 @@ router.post('/:id/reject', async (req, res) => {
 });
 
 // ── POST /orders/:id/cancel ───────────────────────────────────────────────────
-// Body: { channel, mspId }
 router.post('/:id/cancel', async (req, res) => {
   try {
     const { id } = req.params;
@@ -228,7 +284,6 @@ router.post('/:id/cancel', async (req, res) => {
 });
 
 // ── POST /orders/:id/feedback ─────────────────────────────────────────────────
-// Body: { channel, mspId, feedbackText }
 router.post('/:id/feedback', async (req, res) => {
   try {
     const { id } = req.params;
