@@ -149,6 +149,43 @@ router.get('/by-msp/:mspId', async (req, res) => {
   }
 });
 
+// ── POST /orgs/login ───────────────────────────────────────────────────────────
+router.post('/login', async (req, res) => {
+  try {
+    const { identifier, password } = req.body;
+
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Identifier and password are required' });
+    }
+
+    const org = await Org.findOne({
+      $or: [{ email: identifier.toLowerCase() }, { slug: identifier }]
+    });
+
+    if (!org) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const passwordMatch = await bcrypt.compare(password, org.passwordHash);
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    res.json({
+      id: org._id,
+      orgId: org._id,
+      name: org.name,
+      email: org.email,
+      mspId: org.mspId,
+      slug: org.slug,
+      type: org.type,
+      fabricStatus: org.fabricStatus,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /orgs/:id ─────────────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {

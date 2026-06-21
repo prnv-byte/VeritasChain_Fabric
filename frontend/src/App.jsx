@@ -1,38 +1,117 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Landing       from './pages/Landing';
-import Register      from './pages/Register';
-import Login         from './pages/Login';
-import PasswordSetup from './pages/PasswordSetup';
-import Dashboard     from './pages/Dashboard';
-import Admin         from './pages/Admin';
+import { NotificationProvider } from './context/NotificationContext';
+import { NotificationContainer } from './components/NotificationContainer';
+// New pages
+import { LoginPage } from './pages/LoginNew';
+import { RegisterPage } from './pages/RegisterNew';
+import { OrgSetupProgressPage } from './pages/OrgSetupProgressPage';
+import { AdminLoginPage } from './pages/AdminLoginPage';
+import { DashboardPage } from './pages/DashboardNew';
+import { OrderCreatePage } from './pages/OrderCreateNew';
+import { OrdersPage } from './pages/OrdersNew';
+import OrderDetail from './pages/OrderDetail';
+import ChannelsPage from './pages/ChannelsPage';
+import RequirementsPage from './pages/RequirementsPage';
+import AdminDashboard from './pages/AdminDashboard';
 
-// Simple auth guard: redirect to /login if no org in localStorage
+// Keep old pages for now (for compatibility)
+import Landing from './pages/Landing';
+import Dashboard from './pages/Dashboard';
+import OrderCreate from './pages/OrderCreate';
+import OrderFulfill from './pages/OrderFulfill';
+import OrderVerify from './pages/OrderVerify';
+import Admin from './pages/Admin';
+
+// Import styles
+import './styles/glassmorphism.css';
+import './styles/layout.css';
+import './styles/notifications.css';
+
 function ProtectedRoute({ children }) {
-  const org = localStorage.getItem('vc_org');
-  if (!org) return <Navigate to="/login" replace />;
+  const user = localStorage.getItem('user');
+  if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
-export default function App() {
+function AppRoutes() {
   return (
     <Routes>
-      <Route path="/"          element={<Login />}     />
-      <Route path="/landing"   element={<Landing />}   />
-      <Route path="/register"      element={<Register />}      />
-      <Route path="/login"         element={<Login />}         />
-      <Route path="/password-setup" element={<PasswordSetup />} />
+      {/* Auth Routes */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/org-setup-progress" element={<OrgSetupProgressPage />} />
+      <Route path="/admin-login" element={<AdminLoginPage />} />
+
+      {/* Protected Routes */}
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <Dashboard />
+            <DashboardPage />
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/orders"
+        element={
+          <ProtectedRoute>
+            <OrdersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/orders/create"
+        element={
+          <ProtectedRoute>
+            <OrderCreatePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/orders/:id"
+        element={
+          <ProtectedRoute>
+            <OrderDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/channels"
+        element={
+          <ProtectedRoute>
+            <ChannelsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/requirements"
+        element={
+          <ProtectedRoute>
+            <RequirementsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/admin-dashboard" element={<AdminDashboard />} />
+
+      {/* Old routes for compatibility */}
+      <Route path="/landing" element={<Landing />} />
+      <Route path="/orders/fulfill" element={<OrderFulfill />} />
+      <Route path="/orders/verify" element={<OrderVerify />} />
       <Route path="/admin" element={<Admin />} />
-      {/* Catch-all → login */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
+  );
+}
+
+export default function App() {
+  return (
+    <NotificationProvider>
+      <NotificationContainer />
+      <AppRoutes />
+    </NotificationProvider>
   );
 }

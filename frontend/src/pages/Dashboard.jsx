@@ -1,15 +1,20 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import Discover     from '../components/Discover';
 import ChannelView  from '../components/ChannelView';
+import { LoadingSpinner } from '../components/Common/Common';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { logout: authLogout } = useAuth();
   const [myOrg,       setMyOrg]       = useState(null);
   const [channels,    setChannels]    = useState([]);
-  const [view,        setView]        = useState('discover'); // 'discover' | channel._id
+  const [view,        setView]        = useState('discover');
   const [loadingChs,  setLoadingChs]  = useState(false);
+  const [loading,     setLoading]     = useState(true);
+  const [toast,       setToast]       = useState(null);
 
   // Load org from localStorage
   useEffect(() => {
@@ -19,45 +24,71 @@ export default function Dashboard() {
   }, [navigate]);
 
   const fetchChannels = useCallback(async () => {
-    if (!myOrg) return;
+    if (!myOrg?.id) return;
     try {
-      setLoadingChs(true);
       const data = await api.getMyChannels(myOrg.id);
       if (Array.isArray(data)) setChannels(data);
-    } catch (_) {
-      // silent fail on poll
-    } finally {
-      setLoadingChs(false);
-    }
-  }, [myOrg]);
-
-  const fetchOrgCount = useCallback(async () => {
-    try {
-      const data = await api.getOrgs({ status: 'active' });
-      if (Array.isArray(data)) setOrgCount(data.length);
     } catch (err) {
-      setError(err.message || 'Unable to load organizations');
+      console.error('Error fetching channels:', err);
     }
-  }, []);
+  }, [myOrg?.id]);
 
   useEffect(() => {
-    if (!myOrg) return;
-    fetchChannels();
-    fetchOrgCount();
+    if (!myOrg) {
+      navigate('/login');
+      return;
+    }
+    const load = async () => {
+      await fetchChannels();
+      setLoading(false);
+    };
+    load();
     const interval = setInterval(fetchChannels, 5000);
     return () => clearInterval(interval);
-  }, [myOrg, fetchChannels, fetchOrgCount]);
+  }, [myOrg, navigate, fetchChannels]);
 
-  function logout() {
-    localStorage.removeItem('vc_org');
+  const handleLogout = () => {
+    authLogout();
     navigate('/login');
-  }
+  };
+
+  const handleRequestChannel = async (toOrgId) => {
+    try {
+      await api.requestChannel({
+        fromOrgId: myOrg.id,
+        toOrgId: toOrgId,
+      });
+      setToast({ message: 'Channel request sent successfully', type: 'success' });
+      await fetchChannels();
+    } catch (err) {
+      setToast({ message: err.message || 'Failed to request channel', type: 'error' });
+    }
+  };
 
   if (!myOrg) return null;
-
   const activeChannel = view !== 'discover'
     ? channels.find(c => c._id === view)
     : null;
+  const partners = channels.map(ch => {
+    const partner = ch.manufacturerOrgId?._id === myOrg.id ? ch.supplierOrgId : ch.manufacturerOrgId;
+    return {
+      id: ch._id,
+      name: partner?.name || ch.channelName,
+      status: ch.status,
+      channelName: ch.channelName,
+      type: partner?.type,
+    };
+  });
+
+  if (loading) {
+    return (
+      <div className="dashboard-shell">
+        <div className="flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -126,14 +157,20 @@ export default function Dashboard() {
           })}
         </div>
 
-        <div className="sidebar-actions">
-          <button className="btn btn-secondary" onClick={() => { fetchChannels(); fetchOrgCount(); }}>
-            Refresh
-          </button>
-          <button className="btn btn-secondary" onClick={logout}>
-            Logout
-          </button>
-        </div>
+          <div className="flex flex-col gap-2 mt-6">
+            <button
+              onClick={fetchChannels}
+              className="btn-glass-secondary w-full py-2 text-sm font-semibold"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={handleLogout}
+              className="btn-glass-secondary w-full py-2 text-sm font-semibold"
+            >
+              Logout
+            </button>
+          </div>
       </aside>
 
       {/* ── Main content ── */}
@@ -148,6 +185,12 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

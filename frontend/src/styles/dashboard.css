@@ -1,0 +1,19 @@
+.sidebar-content-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.org-card {
+  transition: all 0.3s ease;
+}
+
+.org-card:hover {
+  transform: translateY(-4px);
+}
+
+@media (max-width: 768px) {
+  .sidebar-content-section {
+    gap: 16px;
+  }
+}
