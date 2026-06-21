@@ -17,10 +17,16 @@ node "${SCRIPTS_DIR}/generate.js"
 # shellcheck source=../config/platform.sh
 source "${NETWORK_DIR}/config/platform.sh"
 
-# ── Wipe any leftover CA data (files may be root-owned, use Docker to delete) ─
-if [ -d "${NETWORK_DIR}/organizations" ]; then
-  docker run --rm -v "${NETWORK_DIR}/organizations":/data alpine \
-    sh -c "rm -rf /data/fabric-ca /data/ordererOrganizations /data/peerOrganizations" 2>/dev/null || true
+# ── Wipe ONLY the orderer CA data so it re-enrolls fresh certs ───────────────
+# Peer org crypto (peerOrganizations/) is preserved so peers can restart
+# without re-enrolling. Full wipe lives in resetNetwork.sh.
+if [ -d "${NETWORK_DIR}/organizations/fabric-ca/orderer" ]; then
+  docker run --rm -v "${NETWORK_DIR}/organizations/fabric-ca/orderer":/data alpine \
+    sh -c "rm -rf /data/*" 2>/dev/null || true
+fi
+if [ -d "${NETWORK_DIR}/organizations/ordererOrganizations" ]; then
+  docker run --rm -v "${NETWORK_DIR}/organizations/ordererOrganizations":/data alpine \
+    sh -c "rm -rf /data/*" 2>/dev/null || true
 fi
 
 # ── Pre-create orderer fabric-ca dir before Docker touches it ─────────────────

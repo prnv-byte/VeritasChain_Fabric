@@ -41,37 +41,48 @@ router.post('/request', async (req, res) => {
     });
 
     if (!channel) {
-      // Assign slots based on org type, not who requested first
-      const mfgOrg  = fromOrg.type === 'manufacturer' ? fromOrg : toOrg;
-      const splrOrg = fromOrg.type === 'manufacturer' ? toOrg   : fromOrg;
+      // Slot assignment:
+      // - mixed types (mfg↔splr): manufacturer always gets mfg slot — preserves order-creation rights
+      // - same type (mfg↔mfg or splr↔splr): first requester gets mfg slot as tiebreaker
+      let mfgOrg, splrOrg;
+      if (fromOrg.type !== toOrg.type) {
+        mfgOrg  = fromOrg.type === 'manufacturer' ? fromOrg : toOrg;
+        splrOrg = fromOrg.type === 'manufacturer' ? toOrg   : fromOrg;
+      } else {
+        mfgOrg  = fromOrg;
+        splrOrg = toOrg;
+      }
       const channelName = toChannelName(mfgOrg, splrOrg);
+      const fromIsMfgSlot = mfgOrg._id.toString() === fromOrg._id.toString();
 
       try {
         channel = await Channel.create({
           channelName,
           manufacturerOrgId: mfgOrg._id,
           supplierOrgId:     splrOrg._id,
-          requestedByMfg:  fromOrg.type === 'manufacturer',
-          requestedBySplr: fromOrg.type === 'supplier',
+          requestedByMfg:   fromIsMfgSlot,
+          requestedBySplr: !fromIsMfgSlot,
           status: 'pending',
         });
       } catch (err) {
         if (err.code === 11000 && err.keyPattern && err.keyPattern.channelName) {
           channel = await Channel.findOne({ channelName });
           if (!channel) throw err;
-          const fromIsMfg = fromOrg.type === 'manufacturer';
-          if (fromIsMfg) channel.requestedByMfg  = true;
-          else           channel.requestedBySplr = true;
+          // Slot-based: which slot does fromOrg occupy in this channel?
+          const fromIsMfgSlot2 = channel.manufacturerOrgId.toString() === fromOrg._id.toString();
+          if (fromIsMfgSlot2) channel.requestedByMfg  = true;
+          else                channel.requestedBySplr = true;
           await channel.save();
         } else {
           throw err;
         }
       }
     } else {
-      // Second request — mark based on org type
-      const fromIsMfg = fromOrg.type === 'manufacturer';
-      if (fromIsMfg) channel.requestedByMfg  = true;
-      else           channel.requestedBySplr = true;
+      // Second request (accept) — slot-based, not type-based.
+      // This makes mfg↔mfg and splr↔splr handshakes work correctly.
+      const fromIsMfgSlot = channel.manufacturerOrgId.toString() === fromOrg._id.toString();
+      if (fromIsMfgSlot) channel.requestedByMfg  = true;
+      else               channel.requestedBySplr = true;
       await channel.save();
     }
 

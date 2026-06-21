@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
 
-// SHA-256 of the string "demo" — useful for testing
-const DEMO_HASH = '6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b';
-
 const STATUS_BADGE = {
   PENDING:   'badge-pending',
   FULFILLED: 'badge-fulfilled',
@@ -21,16 +18,51 @@ function shortId(id) {
   return id ? id.split('-').slice(-1)[0].toUpperCase() : '';
 }
 
+// Read a File object and return its text content as a Promise<string>
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = (e) => resolve(e.target.result);
+    reader.onerror = ()  => reject(new Error(`Failed to read file: ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
 export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }) {
-  // Derive role from the order itself, not the channel slot.
-  // Either org on a channel can create orders, so roles flip per order.
   const isMfg  = myOrg.mspId === order.manufacturerMSP;
   const isSplr = myOrg.mspId === order.supplierMSP;
-  const [expanded,       setExpanded]       = useState(false);
-  const [showFulfill,    setShowFulfill]    = useState(false);
-  const [showFeedback,   setShowFeedback]   = useState(false);
-  const [showReject,     setShowReject]     = useState(false);
-  const [loading,        setLoading]        = useState(false);
+
+  const [expanded,     setExpanded]     = useState(false);
+  const [showFulfill,  setShowFulfill]  = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [showReject,   setShowReject]   = useState(false);
+  const [loading,      setLoading]      = useState(false);
+
+  // Verification state — holds result of Run Verifier before manufacturer decides
+  const [verifyResult, setVerifyResult] = useState(null); // null | { valid: bool }
+  const [verifying,    setVerifying]    = useState(false);
+
+  async function handleRunVerify() {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const r = await api.runVerify(order.orderID, {
+        channel,
+        mspId: myOrg.mspId,
+        manufacturerMSP: order.manufacturerMSP,
+      });
+      if (r.error) {
+        showToast(r.error, 'error');
+      } else {
+        setVerifyResult(r);
+        showToast(r.valid ? 'Proof verified — PASS' : 'Proof invalid — FAIL', r.valid ? 'success' : 'error');
+      }
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   async function handleVerify() {
     setLoading(true);
@@ -94,15 +126,9 @@ export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }
           {order.batchID && (
             <>
               <hr style={{ border: 'none', borderTop: '1px solid var(--border)' }} />
-              <Detail label="Batch ID"     value={order.batchID} />
-              <Detail label="VK URL"       value={order.vkURL} link />
-              <Detail label="PF URL"       value={order.pfURL} link />
-              <Detail label="SRH URL"      value={order.srhURL} link />
-              <Detail label="Settings URL" value={order.settingsURL} link />
-              <Detail label="VK Hash"      value={order.vkHash} mono />
-              <Detail label="PF Hash"      value={order.pfHash} mono />
-              <Detail label="SRH Hash"     value={order.srhHash} mono />
-              <Detail label="Settings Hash" value={order.settingsHash} mono />
+              <Detail label="Batch ID"       value={order.batchID} />
+              <Detail label="ZK Proof"       value={order.zkProof ? '[stored on chain]' : null} />
+              <Detail label="Public Signals" value={order.publicSignals ? '[stored on chain]' : null} />
             </>
           )}
 
@@ -118,7 +144,7 @@ export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }
           {order.feedbackText && (
             <>
               <hr style={{ border: 'none', borderTop: '1px solid var(--border)' }} />
-              <Detail label="Feedback" value={order.feedbackText} />
+              <Detail label="Feedback"    value={order.feedbackText} />
               <Detail label="Feedback At" value={fmt(order.feedbackAt)} />
             </>
           )}
@@ -126,7 +152,8 @@ export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }
       )}
 
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+
         {/* Supplier: Fulfill PENDING order */}
         {isSplr && order.status === 'PENDING' && (
           <button className="btn btn-primary btn-sm" onClick={() => setShowFulfill(true)}>
@@ -134,19 +161,62 @@ export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }
           </button>
         )}
 
-        {/* Manufacturer: Accept / Reject FULFILLED order */}
+        {/* Manufacturer: Run Verifier on FULFILLED order, then Accept / Reject */}
         {isMfg && order.status === 'FULFILLED' && (
-          <>
-            <button className="btn btn-success btn-sm" onClick={handleVerify} disabled={loading}>
-              {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Accept'}
-            </button>
-            <button className="btn btn-danger btn-sm" onClick={() => setShowReject(true)}>
-              Reject
-            </button>
-          </>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Step 1: run verifier */}
+            {!verifyResult && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleRunVerify}
+                disabled={verifying}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {verifying
+                  ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Verifying...</>
+                  : 'Run ZK Verifier'}
+              </button>
+            )}
+
+            {/* Step 2: show result banner */}
+            {verifyResult && (
+              <div style={{
+                padding: '8px 12px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600,
+                background: verifyResult.valid ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                color:      verifyResult.valid ? '#22c55e'              : '#ef4444',
+                border:     `1px solid ${verifyResult.valid ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              }}>
+                {verifyResult.valid ? '✓ Proof VALID — battery meets ZK range requirements' : '✗ Proof INVALID — proof does not satisfy requirements'}
+              </div>
+            )}
+
+            {/* Step 3: Accept / Reject — enabled after verifier runs */}
+            {verifyResult && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-success btn-sm" onClick={handleVerify} disabled={loading}>
+                  {loading ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Accept'}
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={() => setShowReject(true)}>
+                  Reject
+                </button>
+              </div>
+            )}
+
+            {/* Allow re-running verifier if already ran */}
+            {verifyResult && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleRunVerify}
+                disabled={verifying}
+                style={{ alignSelf: 'flex-start', fontSize: 11 }}
+              >
+                Re-run Verifier
+              </button>
+            )}
+          </div>
         )}
 
-        {/* Manufacturer: Feedback on ACCEPTED or REJECTED without feedback */}
+        {/* Manufacturer: Feedback on ACCEPTED or REJECTED */}
         {isMfg && (order.status === 'ACCEPTED' || order.status === 'REJECTED') && !order.feedbackAt && (
           <button className="btn btn-secondary btn-sm" onClick={() => setShowFeedback(true)}>
             Add Feedback
@@ -191,25 +261,18 @@ export default function OrderCard({ order, myOrg, channel, onUpdate, showToast }
 
 // ── Detail row ───────────────────────────────────────────────────────────────
 
-function Detail({ label, value, mono, link }) {
+function Detail({ label, value, mono }) {
   if (!value) return null;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 8, alignItems: 'start' }}>
       <span style={{ color: 'var(--text-muted)', fontSize: 12, fontWeight: 500, paddingTop: 1 }}>{label}</span>
-      {link ? (
-        <a href={value} target="_blank" rel="noopener noreferrer"
-          style={{ color: 'var(--accent)', fontSize: 13, wordBreak: 'break-all', textDecoration: 'none' }}>
-          {value}
-        </a>
-      ) : (
-        <span style={{
-          fontSize: 13, wordBreak: 'break-all',
-          fontFamily: mono ? 'monospace' : 'inherit',
-          color: mono ? 'var(--text-muted)' : 'var(--text)',
-        }}>
-          {value}
-        </span>
-      )}
+      <span style={{
+        fontSize: 13, wordBreak: 'break-all',
+        fontFamily: mono ? 'monospace' : 'inherit',
+        color: mono ? 'var(--text-muted)' : 'var(--text)',
+      }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -217,82 +280,124 @@ function Detail({ label, value, mono, link }) {
 // ── Fulfill Modal ─────────────────────────────────────────────────────────────
 
 function FulfillModal({ order, channel, myOrg, onClose, onDone, showToast }) {
-  const [form, setForm] = useState({
-    batchID: '', vkURL: '', pfURL: '', srhURL: '', settingsURL: '',
-    vkHash: '', pfHash: '', srhHash: '', settingsHash: '',
-  });
-  const [loading, setLoading] = useState(false);
-
-  function set(field) { return (e) => setForm(p => ({ ...p, [field]: e.target.value })); }
-
-  function fillDemo() {
-    setForm({
-      batchID: `BATCH-${Date.now()}`,
-      vkURL:      'https://demo-s3.example.com/batch/circuit.vk',
-      pfURL:      'https://demo-s3.example.com/batch/proof.pf',
-      srhURL:     'https://demo-s3.example.com/batch/signals.srh',
-      settingsURL:'https://demo-s3.example.com/batch/settings.json',
-      vkHash:     DEMO_HASH,
-      pfHash:     DEMO_HASH,
-      srhHash:    DEMO_HASH,
-      settingsHash: DEMO_HASH,
-    });
-  }
+  const [batchID,        setBatchID]        = useState('');
+  const [proofFile,      setProofFile]      = useState(null);   // File object
+  const [signalsFile,    setSignalsFile]    = useState(null);   // File object
+  const [proofName,      setProofName]      = useState('');
+  const [signalsName,    setSignalsName]    = useState('');
+  const [loading,        setLoading]        = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!proofFile)   { showToast('Please upload proof.json', 'error');   return; }
+    if (!signalsFile) { showToast('Please upload public.json', 'error');  return; }
+
     setLoading(true);
     try {
-      const r = await api.fulfillOrder(order.orderID, { channel, mspId: myOrg.mspId, ...form });
+      // Read both files as text (they are plain JSON from snarkjs)
+      const [zkProof, publicSignals] = await Promise.all([
+        readFileAsText(proofFile),
+        readFileAsText(signalsFile),
+      ]);
+
+      // Validate they are valid JSON before sending
+      try { JSON.parse(zkProof); }      catch { showToast('proof.json is not valid JSON', 'error'); setLoading(false); return; }
+      try { JSON.parse(publicSignals); } catch { showToast('public.json is not valid JSON', 'error'); setLoading(false); return; }
+
+      const r = await api.fulfillOrder(order.orderID, {
+        channel,
+        mspId: myOrg.mspId,
+        batchID,
+        zkProof,
+        publicSignals,
+      });
       if (r.error) showToast(r.error, 'error');
       else onDone();
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { setLoading(false); }
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
         <h3 className="modal-title">Fulfill Order #{shortId(order.orderID)}</h3>
 
         <div style={{
           background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
-          borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: 16,
-          fontSize: 12, color: 'var(--text-muted)',
+          borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: 16, fontSize: 12,
+          color: 'var(--text-muted)',
         }}>
-          SHA-256 hashes must be 64 hex characters.
-          <button className="btn btn-secondary btn-sm" onClick={fillDemo} style={{ marginLeft: 10 }}>
-            Fill demo values
-          </button>
+          Upload the two files generated by Pranav's snarkjs prover:
+          <strong style={{ color: 'var(--text)' }}> proof.json</strong> and
+          <strong style={{ color: 'var(--text)' }}> public.json</strong>
         </div>
 
         <form onSubmit={handleSubmit}>
-          {[
-            { field: 'batchID',      label: 'Batch ID',     type: 'text',  placeholder: 'e.g. BATCH-001' },
-            { field: 'vkURL',        label: 'VK URL',       type: 'url',   placeholder: 'https://...' },
-            { field: 'pfURL',        label: 'PF URL',       type: 'url',   placeholder: 'https://...' },
-            { field: 'srhURL',       label: 'SRH URL',      type: 'url',   placeholder: 'https://...' },
-            { field: 'settingsURL',  label: 'Settings URL', type: 'url',   placeholder: 'https://...' },
-            { field: 'vkHash',       label: 'VK Hash',      type: 'text',  placeholder: '64-char SHA-256 hex' },
-            { field: 'pfHash',       label: 'PF Hash',      type: 'text',  placeholder: '64-char SHA-256 hex' },
-            { field: 'srhHash',      label: 'SRH Hash',     type: 'text',  placeholder: '64-char SHA-256 hex' },
-            { field: 'settingsHash', label: 'Settings Hash',type: 'text',  placeholder: '64-char SHA-256 hex' },
-          ].map(({ field, label, type, placeholder }) => (
-            <div className="form-group" key={field}>
-              <label className="form-label">{label}</label>
-              <input className="form-input" type={type} placeholder={placeholder}
-                value={form[field]} onChange={set(field)} required />
-            </div>
-          ))}
+          <div className="form-group">
+            <label className="form-label">Batch ID</label>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="e.g. BATCH-001"
+              value={batchID}
+              onChange={e => setBatchID(e.target.value)}
+              required
+            />
+          </div>
+
+          <FileUploadField
+            label="ZK Proof (proof.json)"
+            accept=".json,application/json"
+            fileName={proofName}
+            onChange={(file) => { setProofFile(file); setProofName(file ? file.name : ''); }}
+          />
+
+          <FileUploadField
+            label="Public Signals (public.json)"
+            accept=".json,application/json"
+            fileName={signalsName}
+            onChange={(file) => { setSignalsFile(file); setSignalsName(file ? file.name : ''); }}
+          />
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <><span className="spinner" /> Fulfilling...</> : 'Submit Fulfillment'}
+              {loading ? <><span className="spinner" /> Submitting...</> : 'Submit Proof'}
             </button>
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ── File Upload Field ─────────────────────────────────────────────────────────
+
+function FileUploadField({ label, accept, fileName, onChange }) {
+  return (
+    <div className="form-group">
+      <label className="form-label">{label}</label>
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '8px 12px', borderRadius: 'var(--radius)',
+        border: '1px dashed var(--border)', cursor: 'pointer',
+        background: fileName ? 'rgba(34,197,94,0.06)' : 'var(--surface2)',
+        transition: 'background 0.15s',
+      }}>
+        <span style={{ fontSize: 18 }}>{fileName ? '✓' : '↑'}</span>
+        <span style={{ fontSize: 13, color: fileName ? '#22c55e' : 'var(--text-muted)' }}>
+          {fileName || 'Click to upload file'}
+        </span>
+        <input
+          type="file"
+          accept={accept}
+          style={{ display: 'none' }}
+          onChange={e => onChange(e.target.files[0] || null)}
+        />
+      </label>
     </div>
   );
 }

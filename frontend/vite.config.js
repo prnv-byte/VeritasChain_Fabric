@@ -7,8 +7,10 @@ export default defineConfig({
     port: 4000,
     proxy: {
       '/orgs':     'http://localhost:3000',
+      '/auth':     'http://localhost:3000',
       '/channels': 'http://localhost:3000',
-      '/orders':   'http://localhost:3000',
+      '/orders':        'http://localhost:3000',
+      '/requirements':  'http://localhost:3000',
       '/health':   'http://localhost:3000',
       '/admin':    'http://localhost:3000',
     },

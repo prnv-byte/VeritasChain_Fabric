@@ -1,6 +1,6 @@
 // VeritasChain API client — all requests proxy through Vite to localhost:3000
 
-const BASE = ''; // Vite proxy forwards /orgs, /channels, /orders to backend
+const BASE = '';
 
 export const api = {
   // ── Orgs ────────────────────────────────────────────────────────────────────
@@ -43,6 +43,21 @@ export const api = {
   getChannel: (id) =>
     fetch(`${BASE}/channels/${id}`).then(r => r.json()),
 
+  // ── Requirements ─────────────────────────────────────────────────────────────
+
+  // Manufacturer calls this to post or update requirements on a channel.
+  // data: { channel, mspId, componentType, globalRequirements, zkRanges, verificationKey }
+  setRequirements: (data) =>
+    fetch(`${BASE}/requirements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(r => r.json()),
+
+  // Any channel member calls this to read requirements.
+  getRequirements: (channel, mspId, manufacturerMSP) =>
+    fetch(`${BASE}/requirements?${new URLSearchParams({ channel, mspId, manufacturerMSP })}`).then(r => r.json()),
+
   // ── Orders ──────────────────────────────────────────────────────────────────
 
   createOrder: (data) =>
@@ -61,8 +76,20 @@ export const api = {
   getOrderHistory: (id, channel, mspId) =>
     fetch(`${BASE}/orders/${id}/history?channel=${channel}&mspId=${mspId}`).then(r => r.json()),
 
+  // data: { channel, mspId, batchID, zkProof, publicSignals }
+  // zkProof and publicSignals are the file contents from snarkjs as strings
   fulfillOrder: (id, data) =>
     fetch(`${BASE}/orders/${id}/fulfill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(r => r.json()),
+
+  // Manufacturer calls this to run snarkjs verification on the stored proof.
+  // data: { channel, mspId, manufacturerMSP }
+  // Returns { valid: true/false }
+  runVerify: (id, data) =>
+    fetch(`${BASE}/orders/${id}/run-verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
