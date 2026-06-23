@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { GlassCard } from '../components/Common/Common';
 
 const features = [
   {
@@ -17,89 +18,77 @@ const features = [
     title: 'Trust',
     desc: 'Every transaction is immutable and transparent to channel members — no middlemen, no disputes.',
   },
+  {
+    icon: '⚡',
+    title: 'Scale',
+    desc: 'Enterprise-grade blockchain infrastructure built on Hyperledger Fabric with multi-channel support.',
+  },
 ];
 
 export default function Landing() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Nav */}
-      <nav style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 40px', borderBottom: '1px solid var(--border)',
-        background: 'var(--surface)',
-      }}>
-        <span style={{ fontWeight: 800, fontSize: 20, color: 'var(--accent)' }}>VeritasChain</span>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <Link to="/register" className="btn btn-secondary">Register</Link>
-          <Link to="/login"    className="btn btn-primary">Login</Link>
-        </div>
-      </nav>
+    <div className="landing-shell">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl" />
+      </div>
 
-      {/* Hero */}
-      <section style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '80px 40px', textAlign: 'center',
-      }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
-          borderRadius: 100, padding: '6px 16px', marginBottom: 24,
-          fontSize: 12, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em',
-        }}>
-          Hyperledger Fabric 2.5 — Phase 1
-        </div>
+      <div className="relative z-10 w-full flex flex-col items-center">
+        {/* Navigation */}
+        <nav className="glass w-full max-w-6xl mx-auto px-8 py-4 rounded-2xl flex items-center justify-between gap-6 mb-12">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-bold text-gradient">VeritasChain</span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            <Link to="/register" className="btn-glass-secondary px-6 py-2 font-semibold">
+              Register
+            </Link>
+            <Link to="/login" className="btn-glass px-6 py-2 font-semibold">
+              Login
+            </Link>
+          </div>
+        </nav>
 
-        <h1 style={{
-          fontSize: 'clamp(36px, 6vw, 64px)', fontWeight: 900, lineHeight: 1.1,
-          marginBottom: 20, letterSpacing: '-0.02em',
-        }}>
-          VeritasChain
-          <br />
-          <span style={{ color: 'var(--accent)' }}>Industrial Marketplace</span>
-        </h1>
+        {/* Hero Section */}
+        <main className="w-full max-w-2xl mx-auto text-center mb-20">
+          <div className="mb-6">
+            <span className="eyebrow">Hyperledger Fabric 2.5</span>
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-bold mb-4 leading-tight">
+            Industrial Blockchain for <span className="text-gradient">Trusted Partners</span>
+          </h1>
+          <p className="text-slate-300 text-lg mb-8 leading-relaxed max-w-xl mx-auto">
+            Move supply chain collaboration out of spreadsheets and into private channels with rich audit trails, immutable records, and zero-knowledge proofs.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link to="/register" className="btn-glass px-8 py-3 font-semibold text-lg w-full sm:w-auto text-center">
+              Register Organization
+            </Link>
+            <Link to="/login" className="btn-glass-secondary px-8 py-3 font-semibold text-lg w-full sm:w-auto text-center">
+              Login to Dashboard
+            </Link>
+          </div>
+        </main>
 
-        <p style={{
-          fontSize: 18, color: 'var(--text-muted)', maxWidth: 560, lineHeight: 1.7, marginBottom: 40,
-        }}>
-          A blockchain-powered B2B platform for industrial supply chains.
-          Private channels, ZK proof quality control, and tamper-evident order management.
-        </p>
-
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <Link to="/register" className="btn btn-primary" style={{ padding: '12px 28px', fontSize: 15 }}>
-            Register Organization
-          </Link>
-          <Link to="/login" className="btn btn-secondary" style={{ padding: '12px 28px', fontSize: 15 }}>
-            Login
-          </Link>
-        </div>
-      </section>
-
-      {/* Feature cards */}
-      <section style={{ padding: '60px 40px 80px', maxWidth: 900, margin: '0 auto', width: '100%' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
+        {/* Features Grid */}
+        <section className="feature-grid mb-20">
           {features.map(f => (
-            <div key={f.title} className="card" style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 36, marginBottom: 12 }}>{f.icon}</div>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{f.title}</h3>
-              <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>{f.desc}</p>
-            </div>
+            <GlassCard key={f.title} className="feature-card flex flex-col">
+              <div className="text-4xl mb-4">{f.icon}</div>
+              <h3 className="text-lg font-bold mb-2">{f.title}</h3>
+              <p className="text-slate-300 text-sm leading-relaxed">{f.desc}</p>
+            </GlassCard>
           ))}
-        </div>
-      </section>
+        </section>
 
-      {/* Footer */}
-      <footer style={{
-        borderTop: '1px solid var(--border)', padding: '20px 40px',
-        textAlign: 'center', color: 'var(--text-muted)', fontSize: 12,
-      }}>
-        VeritasChain — Phase 1 &nbsp;|&nbsp; Hyperledger Fabric 2.5 &nbsp;|&nbsp; Built on VeritasChain Platform
-        &nbsp;|&nbsp;
-        <Link to="/admin" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
-          System Admin
-        </Link>
-      </footer>
+        {/* Footer */}
+        <footer className="glass w-full max-w-6xl mx-auto px-8 py-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+          <p>VeritasChain — Phase 2 | Hyperledger Fabric 2.5 | Enterprise Supply Chain</p>
+          <Link to="/admin" className="text-indigo-400 hover:text-indigo-300 font-semibold">
+            System Admin
+          </Link>
+        </footer>
+      </div>
     </div>
   );
 }

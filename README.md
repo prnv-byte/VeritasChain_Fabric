@@ -114,6 +114,14 @@ MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/veritascha
 PORT=3000
 PLATFORM_SECRET=veritaschain_2626
 ADMIN_KEY=vc_admin_secret_2626
+
+# SMTP configuration for email delivery
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+FROM_EMAIL=no-reply@veritaschain.com
+APP_BASE_URL=http://localhost:5173
 ```
 
 > **Important:** All team members must use the **same `PLATFORM_SECRET`** so org identifiers match across systems.

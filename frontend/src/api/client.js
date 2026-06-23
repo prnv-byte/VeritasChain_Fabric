@@ -5,6 +5,13 @@ const BASE = '';
 export const api = {
   // ── Orgs ────────────────────────────────────────────────────────────────────
 
+  login: (identifier, password) =>
+    fetch(`${BASE}/orgs/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password }),
+    }).then(r => r.json()),
+
   registerOrg: (data) =>
     fetch(`${BASE}/orgs/register`, {
       method: 'POST',

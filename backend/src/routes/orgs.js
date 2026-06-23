@@ -2,22 +2,30 @@
 
 const express = require('express');
 const router  = express.Router();
-const crypto  = require('crypto'); // Built-in Node.js module
+const crypto  = require('crypto');
+const bcrypt  = require('bcryptjs');
 const Org     = require('../models/Org');
 const { toMspId, toDomain, toFolderName, provisionOrg } = require('../fabric/provisioner');
 const { assignCaPort, assignPeerPort } = require('../fabric/portManager');
-const { sendPasswordSetupEmail } = require('../utils/mailer');
 
 // ── POST /orgs/register ───────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { name, type, whatTheyMake, address, contact, email } = req.body;
+    const { name, type, whatTheyMake, address, contact, email, password, confirmPassword } = req.body;
 
     // Validate required fields
-    if (!name || !type || !whatTheyMake || !address || !contact || !email) {
+    if (!name || !type || !whatTheyMake || !address || !contact || !email || !password || !confirmPassword) {
       return res.status(400).json({
-        error: 'All fields required: name, type, whatTheyMake, address, contact, email',
+        error: 'All fields required: name, type, whatTheyMake, address, contact, email, password, confirmPassword',
       });
+    }
+
+    // Validate password
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'Passwords do not match.' });
     }
     if (!['manufacturer', 'supplier'].includes(type)) {
       return res.status(400).json({ error: 'type must be "manufacturer" or "supplier"' });
@@ -59,20 +67,19 @@ router.post('/register', async (req, res) => {
     const domain     = toDomain(slug);     
     const folderName = toFolderName(slug); 
 
-    // Save metadata structure into database
-    const passwordResetToken = crypto.randomBytes(32).toString('hex');
-    const passwordResetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Hash the password
+    const passwordHash = await bcrypt.hash(password, 10);
 
+    // Save metadata structure into database
     const org = new Org({
-      name: name.trim(), // Stored display name (Duplicates permitted)
-      slug,              // Isolated routing slug (e.g. "tatamotors-a2b1")
+      name: name.trim(),
+      slug,
       type,
       whatTheyMake,
       address,
       contact,
       email: normalizedEmail,
-      passwordResetToken,
-      passwordResetExpires,
+      passwordHash,
       caPort,
       peerPort,
       ccPort,
@@ -84,15 +91,6 @@ router.post('/register', async (req, res) => {
     });
 
     await org.save();
-
-    try {
-      await sendPasswordSetupEmail(org, passwordResetToken);
-    } catch (err) {
-      console.error('[email] Failed to send password setup email for', normalizedEmail, err);
-      org.fabricStatus = 'failed';
-      await org.save();
-      return res.status(500).json({ error: 'Failed to send password setup email. Please contact support.' });
-    }
 
     // Provision the org using a plain JS object so downstream code gets exact fields.
     const orgPayload = org.toObject();
@@ -146,6 +144,43 @@ router.get('/by-msp/:mspId', async (req, res) => {
     const org = await Org.findOne({ mspId: req.params.mspId }).select('-__v');
     if (!org) return res.status(404).json({ error: 'Org not found' });
     res.json(org);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /orgs/login ───────────────────────────────────────────────────────────
+router.post('/login', async (req, res) => {
+  try {
+    const { identifier, password } = req.body;
+
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Identifier and password are required' });
+    }
+
+    const org = await Org.findOne({
+      $or: [{ email: identifier.toLowerCase() }, { slug: identifier }]
+    });
+
+    if (!org) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const passwordMatch = await bcrypt.compare(password, org.passwordHash);
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    res.json({
+      id: org._id,
+      orgId: org._id,
+      name: org.name,
+      email: org.email,
+      mspId: org.mspId,
+      slug: org.slug,
+      type: org.type,
+      fabricStatus: org.fabricStatus,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
