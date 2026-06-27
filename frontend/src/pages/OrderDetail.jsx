@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, FileSearch, Clock3, ClipboardList } from 'lucide-react';
+import { ArrowLeft, Clock3, ClipboardList, ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import {
   GlassmorphicCard,
@@ -18,14 +18,6 @@ function formatDate(ts) {
   try { return new Date(ts).toLocaleString(); } catch { return ts; }
 }
 
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = () => reject(new Error(`Failed to read file ${file.name}`));
-    reader.readAsText(file);
-  });
-}
 
 export default function OrderDetail() {
   const { id } = useParams();
@@ -36,9 +28,8 @@ export default function OrderDetail() {
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [order, setOrder] = useState(null);
-  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [fulfillState, setFulfillState] = useState({ batchID: '', proofFile: null, signalsFile: null });
+  const [fulfillState, setFulfillState] = useState({ batchID: '', proofFile: null, publicFile: null });
   const [fulfilling, setFulfilling] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
   const [runningVerify, setRunningVerify] = useState(false);
@@ -86,12 +77,6 @@ export default function OrderDetail() {
         setOrder(foundOrder);
         setSelectedChannel(foundChannel);
 
-        try {
-          const historyResponse = await orderService.getOrderHistory(id, foundChannel.channelName, parsedUser.mspId);
-          setHistory(historyResponse.data || []);
-        } catch (_err) {
-          setHistory([]);
-        }
       } catch (err) {
         error(err.response?.data?.error || err.message || 'Unable to load order details.');
       } finally {
@@ -112,30 +97,25 @@ export default function OrderDetail() {
   const handleFulfillSubmit = async (event) => {
     event.preventDefault();
     if (!order || !selectedChannel || !user) return;
-    const { batchID, proofFile, signalsFile } = fulfillState;
+    const { batchID, proofFile, publicFile } = fulfillState;
 
-    if (!proofFile || !signalsFile) {
-      error('Please upload both proof.json and public.json.');
+    if (!proofFile || !publicFile) {
+      error('Please upload both files: .proof and .public.json');
       return;
     }
 
     setFulfilling(true);
     try {
-      const [zkProof, publicSignals] = await Promise.all([
-        readFileAsText(proofFile),
-        readFileAsText(signalsFile),
-      ]);
+      const formData = new FormData();
+      formData.append('channel', orderChannelName);
+      formData.append('mspId', user.mspId);
+      if (batchID) formData.append('batchID', batchID);
+      formData.append('proofFile',  proofFile);
+      formData.append('publicFile', publicFile);
 
-      await orderService.fulfillOrder(order.orderID, {
-        channel: orderChannelName,
-        mspId: user.mspId,
-        batchID: batchID || `BATCH-${Date.now()}`,
-        zkProof,
-        publicSignals,
-      });
-
+      await orderService.fulfillOrder(order.orderID, formData);
       success('Order fulfillment submitted.');
-      setFulfillState({ batchID: '', proofFile: null, signalsFile: null });
+      setFulfillState({ batchID: '', proofFile: null, publicFile: null });
       refreshOrder();
     } catch (err) {
       error(err.response?.data?.error || err.message || 'Fulfillment failed.');
@@ -151,14 +131,15 @@ export default function OrderDetail() {
       const response = await orderService.runVerify(order.orderID, {
         channel: orderChannelName,
         mspId: user.mspId,
-        manufacturerMSP: order.manufacturerMSP,
       });
       const result = response.data;
-      if (result.error) {
-        error(result.error);
+      setVerifyResult(result);
+      if (result.valid) {
+        success('Proof verified — batch is within spec.');
+      } else if (result.violations?.length) {
+        success('Proof is cryptographically valid but batch is out of specification.');
       } else {
-        setVerifyResult(result);
-        success(result.valid ? 'Proof verified successfully' : 'Proof verification failed');
+        error('Proof is cryptographically invalid.');
       }
     } catch (err) {
       error(err.response?.data?.error || err.message || 'Verification failed.');
@@ -211,8 +192,6 @@ export default function OrderDetail() {
     try {
       const response = await orderService.getOrder(order.orderID, orderChannelName, user.mspId);
       setOrder(response.data);
-      const historyResponse = await orderService.getOrderHistory(order.orderID, orderChannelName, user.mspId);
-      setHistory(historyResponse.data || []);
     } catch (_err) {
       // ignore refresh failures
     }
@@ -252,14 +231,14 @@ export default function OrderDetail() {
             <button
               type="button"
               onClick={() => navigate('/orders')}
-              className="text-blue-300 hover:text-white text-sm font-semibold"
+              className="inline-flex items-center gap-1.5 text-white/50 hover:text-white text-sm transition-colors mb-3"
             >
-              ← Back to Orders
+              <ArrowLeft className="w-4 h-4" /> Back to Orders
             </button>
-            <h1 className="text-3xl font-bold text-white mt-3">Order Details</h1>
-            <p className="text-white/70">Order ID: {order.orderID}</p>
+            <h1 className="text-3xl font-bold text-white">Order Details</h1>
+            <p className="text-white/50 text-sm font-mono mt-1">{order.orderID}</p>
           </div>
-          <GlassmorphicButton onClick={() => navigate('/orders')}>
+          <GlassmorphicButton onClick={refreshOrder} variant="secondary" size="sm">
             Refresh
           </GlassmorphicButton>
         </div>
@@ -320,33 +299,7 @@ export default function OrderDetail() {
               </div>
             </GlassmorphicCard>
 
-            <GlassmorphicCard className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <FileSearch className="w-5 h-5 text-blue-300" />
-                <h3 className="text-lg font-semibold text-white">Order History</h3>
-              </div>
 
-              {history.length === 0 ? (
-                <p className="text-white/60">No audit trail available for this order.</p>
-              ) : (
-                <div className="space-y-4">
-                  {history.map((entry, index) => (
-                    <div key={index} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="flex items-center justify-between gap-3 mb-2 text-sm text-white/70">
-                        <span>{entry.txId || entry.transactionId || `Tx ${index + 1}`}</span>
-                        <span>{formatDate(entry.timestamp || entry.time)}</span>
-                      </div>
-                      <div className="text-sm text-white/80">
-                        <p className="font-semibold">{entry.type || entry.action || 'Update'}</p>
-                        <pre className="whitespace-pre-wrap break-words text-xs text-white/60 mt-2">
-                          {JSON.stringify(entry, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassmorphicCard>
           </div>
 
           <div className="space-y-6">
@@ -367,25 +320,25 @@ export default function OrderDetail() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm text-white/70 mb-2">ZK Proof (proof.json)</label>
-                    <input
-                      type="file"
-                      accept="application/json"
-                      onChange={handleFileChange('proofFile')}
-                      className="w-full text-sm text-white/80"
-                    />
+                  <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-xs font-mono mb-2">
+                    <p className="text-white/40 mb-1 not-italic text-[10px] uppercase tracking-widest">CLI — generate proof</p>
+                    <p className="text-emerald-300/80 break-all">vc-quickprove --csv data.csv --order {order?.orderID?.substring(0,8)} --out ./out/ --pk circuit.pk</p>
                   </div>
 
-                  <div>
-                    <label className="block text-sm text-white/70 mb-2">Public Signals (public.json)</label>
-                    <input
-                      type="file"
-                      accept="application/json"
-                      onChange={handleFileChange('signalsFile')}
-                      className="w-full text-sm text-white/80"
-                    />
-                  </div>
+                  <FilePickerField
+                    label="Proof file"
+                    hint=".proof"
+                    accept=".proof"
+                    file={fulfillState.proofFile}
+                    onChange={handleFileChange('proofFile')}
+                  />
+                  <FilePickerField
+                    label="Public signals"
+                    hint=".public.json"
+                    accept=".json,.public.json"
+                    file={fulfillState.publicFile}
+                    onChange={handleFileChange('publicFile')}
+                  />
 
                   <GlassmorphicButton type="submit" loading={fulfilling} className="w-full">
                     Submit Fulfillment
@@ -403,34 +356,64 @@ export default function OrderDetail() {
                     Run ZK Verification
                   </GlassmorphicButton>
 
-                  {verifyResult && (
-                    <div className={`rounded-2xl p-4 text-sm ${verifyResult.valid ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-400/20' : 'bg-rose-500/10 text-rose-200 border border-rose-400/20'}`}>
-                      {verifyResult.valid ? 'Proof is valid.' : 'Proof is invalid.'}
-                    </div>
-                  )}
+                  {verifyResult && (() => {
+                    const isOutOfSpec = !verifyResult.valid && verifyResult.violations?.length > 0;
+                    const boxClass = verifyResult.valid
+                      ? 'bg-emerald-500/10 border border-emerald-400/20'
+                      : isOutOfSpec
+                        ? 'bg-amber-500/10 border border-amber-400/30'
+                        : 'bg-rose-500/10 border border-rose-400/20';
+                    const labelClass = verifyResult.valid
+                      ? 'text-emerald-300'
+                      : isOutOfSpec
+                        ? 'text-amber-300'
+                        : 'text-rose-300';
+                    const label = verifyResult.valid
+                      ? 'PROOF VALID — WITHIN SPEC'
+                      : isOutOfSpec
+                        ? 'PROOF VALID — BATCH OUT OF SPEC'
+                        : 'PROOF INVALID';
+                    return (
+                      <div className={`rounded-2xl p-4 text-sm ${boxClass}`}>
+                        <p className={`font-bold mb-2 ${labelClass}`}>{label}</p>
+                        {isOutOfSpec && verifyResult.violations && (
+                          <ul className="space-y-1">
+                            {verifyResult.violations.map((v, i) => (
+                              <li key={i} className="text-amber-200/80 text-xs font-mono">⚠ {v}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {!isOutOfSpec && verifyResult.output && (
+                          <pre className="text-white/50 text-xs whitespace-pre-wrap font-mono mt-1">
+                            {verifyResult.output}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })()}
 
-                  <div className="space-y-3">
+                  <div className="space-y-3 pt-2 border-t border-white/10">
                     <GlassmorphicButton onClick={handleAccept} loading={submittingReject} className="w-full">
-                      Accept Fulfillment
+                      <ShieldCheck className="w-4 h-4 inline mr-2" /> Accept Fulfillment
                     </GlassmorphicButton>
 
-                    <div>
-                      <label className="block text-sm text-white/70 mb-2">Rejection Reason</label>
+                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 space-y-3">
+                      <p className="text-xs text-rose-300/70 uppercase tracking-widest font-semibold">Reject</p>
                       <GlassmorphicTextarea
                         value={rejectReason}
                         onChange={(e) => setRejectReason(e.target.value)}
-                        placeholder="Why are you rejecting this fulfillment?"
-                        rows={4}
+                        placeholder="Reason for rejection…"
+                        rows={3}
                       />
+                      <GlassmorphicButton
+                        onClick={handleReject}
+                        loading={submittingReject}
+                        variant="secondary"
+                        className="w-full border-rose-500/30 text-rose-300 hover:bg-rose-500/10"
+                      >
+                        <ShieldX className="w-4 h-4 inline mr-2" /> Reject Fulfillment
+                      </GlassmorphicButton>
                     </div>
-                    <GlassmorphicButton
-                      onClick={handleReject}
-                      loading={submittingReject}
-                      variant="secondary"
-                      className="w-full"
-                    >
-                      Reject Fulfillment
-                    </GlassmorphicButton>
                   </div>
                 </div>
               )}
@@ -454,5 +437,26 @@ export default function OrderDetail() {
         </div>
       </motion.div>
     </Layout>
+  );
+}
+
+function FilePickerField({ label, hint, accept, file, onChange }) {
+  const inputId = `file-${label.replace(/\s+/g, '-').toLowerCase()}`;
+  return (
+    <div>
+      <label className="block text-sm text-white/70 mb-1.5">
+        {label} <span className="text-white/30 text-xs">{hint}</span>
+      </label>
+      <label
+        htmlFor={inputId}
+        className="flex items-center gap-3 w-full cursor-pointer rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 px-4 py-2.5 transition-all"
+      >
+        <Upload className="w-4 h-4 text-white/40 shrink-0" />
+        <span className="text-sm text-white/50 truncate">
+          {file ? file.name : `Choose ${hint} file…`}
+        </span>
+        <input id={inputId} type="file" accept={accept} onChange={onChange} className="sr-only" />
+      </label>
+    </div>
   );
 }

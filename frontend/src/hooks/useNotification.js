@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useCallback, useContext } from 'react';
 import { NotificationContext } from '../context/NotificationContext';
 
 export function useNotification() {
@@ -12,11 +12,11 @@ export function useNotification() {
 export function useToast() {
   const { addNotification } = useNotification();
 
-  return {
-    success: (message, duration = 3000) => addNotification(message, 'success', duration),
-    error: (message, duration = 5000) => addNotification(message, 'error', duration),
-    warning: (message, duration = 4000) => addNotification(message, 'warning', duration),
-    info: (message, duration = 3000) => addNotification(message, 'info', duration),
-    loading: (message) => addNotification(message, 'loading', 0),
-  };
+  const success = useCallback((message, duration = 3000) => addNotification(message, 'success', duration), [addNotification]);
+  const error = useCallback((message, duration = 5000) => addNotification(message, 'error', duration), [addNotification]);
+  const warning = useCallback((message, duration = 4000) => addNotification(message, 'warning', duration), [addNotification]);
+  const info = useCallback((message, duration = 3000) => addNotification(message, 'info', duration), [addNotification]);
+  const loading = useCallback((message) => addNotification(message, 'loading', 0), [addNotification]);
+
+  return { success, error, warning, info, loading };
 }

@@ -26,7 +26,7 @@ const ChannelSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'provisioning', 'active', 'failed'],
+    enum: ['pending', 'provisioning', 'active', 'failed', 'declined'],
     default: 'pending',
   },
   // Per-channel dedicated orderer (populated when provisioning starts)

@@ -1,9 +1,26 @@
 'use strict';
 
-const express  = require('express');
-const router   = express.Router();
+const express      = require('express');
+const router       = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const multer       = require('multer');
+const path         = require('path');
+const fs           = require('fs');
+const os           = require('os');
+const { execFile } = require('child_process');
 const { getContract } = require('../fabric/gateway');
+const ChannelRequirement = require('../models/ChannelRequirement');
+const Channel            = require('../models/Channel');
+
+// ── file upload (memory storage — we persist to disk manually after validation) ──
+const upload = multer({ storage: multer.memoryStorage() });
+
+const PROOFS_DIR = path.join(__dirname, '..', '..', 'proofs');
+
+function proofDir(channelName, orderId) {
+  return path.join(PROOFS_DIR, channelName, orderId);
+}
+
 
 const CC_NAME = 'veritasorder';
 
@@ -126,47 +143,82 @@ router.get('/:id/history', async (req, res) => {
 });
 
 // ── POST /orders/:id/fulfill ──────────────────────────────────────────────────
-// Body: { channel, mspId, batchID, zkProof, publicSignals }
-// zkProof      = full content of proof.json from snarkjs (as string)
-// publicSignals = full content of public.json from snarkjs (as string)
-router.post('/:id/fulfill', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { channel, mspId, batchID, zkProof, publicSignals } = req.body;
+// Multipart form: proofFile (.proof binary), publicFile (.public.json)
+// Form fields:   channel, mspId, batchID (optional)
+//
+// Proof binary is base64-encoded and stored on-chain as zkProof.
+// public.json content is stored on-chain as publicSignals (transparency).
+// vk is NOT uploaded by supplier — it is looked up from the channel's vc-setup output.
+router.post('/:id/fulfill',
+  upload.fields([
+    { name: 'proofFile',  maxCount: 1 },
+    { name: 'publicFile', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { channel, mspId, batchID } = req.body;
 
-    if (!channel || !mspId || !batchID || !zkProof || !publicSignals) {
-      return res.status(400).json({
-        error: 'Missing required fields: channel, mspId, batchID, zkProof, publicSignals',
-      });
+      if (!channel || !mspId) {
+        return res.status(400).json({ error: 'channel and mspId are required' });
+      }
+
+      const proofBuf  = req.files?.proofFile?.[0]?.buffer;
+      const publicBuf = req.files?.publicFile?.[0]?.buffer;
+
+      if (!proofBuf || !publicBuf) {
+        return res.status(400).json({
+          error: 'Two files are required: proofFile (.proof) and publicFile (.public.json)',
+        });
+      }
+
+      // Validate public.json is parseable
+      const publicStr = publicBuf.toString('utf8');
+      try { JSON.parse(publicStr); } catch {
+        return res.status(400).json({ error: 'publicFile is not valid JSON' });
+      }
+
+      // zkProof = base64-encoded gnark proof binary
+      const zkProof = proofBuf.toString('base64');
+      const resolvedBatchID = batchID || `BATCH-${Date.now()}`;
+
+      const result = await withContract(mspId, channel, async (contract) => {
+        await contract.submitTransaction(
+          'FulfillOrder', id, resolvedBatchID, zkProof, publicStr,
+        );
+        return { orderID: id, status: 'FULFILLED' };
+      }, res);
+
+      if (result) {
+        // Persist proof files to backend/proofs/<channelName>/<orderId>/
+        const dir = proofDir(channel, id);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'proof.proof'),  proofBuf);
+        fs.writeFileSync(path.join(dir, 'public.json'),  publicStr, 'utf8');
+        console.log(`[fulfill] Proof files saved to ${dir}`);
+        res.json(result);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
-
-    const result = await withContract(mspId, channel, async (contract) => {
-      await contract.submitTransaction(
-        'FulfillOrder', id, batchID, zkProof, publicSignals,
-      );
-      return { orderID: id, status: 'FULFILLED' };
-    }, res);
-
-    if (result) res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
 // ── POST /orders/:id/run-verify ───────────────────────────────────────────────
-// Manufacturer calls this to run snarkjs.groth16.verify against the stored proof.
-// Reads proof + publicSignals from chain, reads verificationKey from requirements.
-// Body: { channel, mspId, manufacturerMSP }
+// OEM calls this to verify the supplier's gnark proof using vc-quickverify.
+// Reads proof (base64) + publicSignals (JSON string) from chain.
+// Reads vk binary from server filesystem (saved during fulfill).
+// Body: { channel, mspId }
 router.post('/:id/run-verify', async (req, res) => {
   try {
     const { id } = req.params;
-    const { channel, mspId, manufacturerMSP } = req.body;
+    const { channel, mspId } = req.body;
 
-    if (!channel || !mspId || !manufacturerMSP) {
-      return res.status(400).json({ error: 'channel, mspId, and manufacturerMSP are required' });
+    if (!channel || !mspId) {
+      return res.status(400).json({ error: 'channel and mspId are required' });
     }
 
-    // Step 1: read order from chain to get proof and public signals
+    // Step 1: fetch order from chain
     const order = await withContract(mspId, channel, async (contract) => {
       const data = await contract.evaluateTransaction('GetOrder', id);
       return decodeResult(data);
@@ -177,46 +229,102 @@ router.post('/:id/run-verify', async (req, res) => {
       return res.status(400).json({ error: `Order must be FULFILLED to verify, current: ${order.status}` });
     }
     if (!order.zkProof || !order.publicSignals) {
-      return res.status(400).json({ error: 'Order is missing zkProof or publicSignals on chain' });
+      return res.status(400).json({ error: 'Order is missing proof data on chain' });
     }
 
-    // Step 2: read requirements from chain to get verification key
-    const requirements = await withContract(mspId, channel, async (contract) => {
-      const data = await contract.evaluateTransaction('GetRequirements', manufacturerMSP);
-      return decodeResult(data);
-    }, res);
-    if (!requirements) return;
-
-    if (!requirements.verificationKey) {
-      return res.status(400).json({ error: 'No verification key found in requirements. Manufacturer must set requirements first.' });
+    // Step 2: look up vk from channel requirements (written by vc-setup when OEM saved requirements)
+    const channelDoc = await Channel.findOne({ channelName: channel });
+    const reqs = channelDoc
+      ? await ChannelRequirement.findOne({ channelId: channelDoc._id })
+      : null;
+    const vk = reqs?.vkPath;
+    if (!vk || !fs.existsSync(vk)) {
+      return res.status(400).json({
+        error: 'Verifying key not found. Make sure the OEM has saved requirements and ZK keys are generated (status: ready).',
+      });
     }
 
-    // Step 3: parse the JSON file contents stored on chain
-    let proof, publicSignals, vkey;
+    // Step 3: write temp files for vc-quickverify
+    const tmpProof  = path.join(os.tmpdir(), `${id}.proof`);
+    const tmpPublic = path.join(os.tmpdir(), `${id}.public.json`);
     try {
-      proof         = JSON.parse(order.zkProof);
-      publicSignals = JSON.parse(order.publicSignals);
-      vkey          = JSON.parse(requirements.verificationKey);
-    } catch (parseErr) {
-      return res.status(400).json({ error: `Failed to parse proof/signals/vkey JSON: ${parseErr.message}` });
+      fs.writeFileSync(tmpProof,  Buffer.from(order.zkProof, 'base64'));
+      fs.writeFileSync(tmpPublic, order.publicSignals);
+    } catch (writeErr) {
+      return res.status(500).json({ error: `Failed to prepare temp files: ${writeErr.message}` });
     }
 
-    // Step 4: run snarkjs verification
-    // snarkjs is ESM-only in newer versions, use dynamic import
-    let isValid;
+    // Step 4: run vc-quickverify subprocess
+    const verifierBin = process.env.ZK_VERIFIER_BIN ||
+      path.join(__dirname, '..', '..', '..', 'zk', 'dist', 'vc-quickverify');
+
     try {
-      const snarkjs = await import('snarkjs');
-      isValid = await snarkjs.groth16.verify(vkey, publicSignals, proof);
-    } catch (snarkErr) {
-      if (snarkErr.code === 'ERR_MODULE_NOT_FOUND' || snarkErr.message.includes('Cannot find module')) {
-        return res.status(500).json({
-          error: 'snarkjs is not installed. Run: cd backend && npm install snarkjs',
-        });
+      const { valid, output } = await new Promise((resolve, reject) => {
+        execFile(
+          verifierBin,
+          ['--proof', tmpProof, '--public', tmpPublic, '--vk', vk],
+          { timeout: 30_000 },
+          (err, stdout, stderr) => {
+            if (err && err.code === 2) {
+              // exit 2 = PROOF INVALID — not an operational error
+              resolve({ valid: false, output: stdout || 'PROOF INVALID' });
+            } else if (err) {
+              reject(new Error(
+                err.code === 'ENOENT'
+                  ? `vc-quickverify binary not found at ${verifierBin}. Build it with: cd zk && go build -o dist/vc-quickverify ./cmd/verifier/`
+                  : (stderr || err.message)
+              ));
+            } else {
+              resolve({ valid: true, output: stdout });
+            }
+          }
+        );
+      });
+
+      if (valid && reqs?.params?.length) {
+        // Application-layer range check: compare proof's public stats against OEM requirements.
+        // The ZK circuit only proves "stats are internally consistent" — it does NOT prove
+        // that the batch min/max fall within the OEM's specified allowed range.
+        // We must do that check here using the public signals from the chain.
+        let publicSignals;
+        try { publicSignals = JSON.parse(order.publicSignals); } catch { publicSignals = null; }
+
+        if (publicSignals?.parameters) {
+          const violations = [];
+          for (const param of reqs.params) {
+            const colKey = param.name.trim().toLowerCase().replace(/\s+/g, '_');
+            const colStats = publicSignals.parameters[colKey] || publicSignals.parameters[param.name];
+            if (!colStats) continue;
+
+            const actualMin = colStats.min;
+            const actualMax = colStats.max;
+            const reqMin = param.min != null && param.min !== '' ? Number(param.min) : null;
+            const reqMax = param.max != null && param.max !== '' ? Number(param.max) : null;
+
+            if (reqMin !== null && actualMin < reqMin) {
+              violations.push(`${param.name}: batch min ${actualMin} < required min ${reqMin}`);
+            }
+            if (reqMax !== null && actualMax > reqMax) {
+              violations.push(`${param.name}: batch max ${actualMax} > required max ${reqMax}`);
+            }
+          }
+
+          if (violations.length) {
+            return res.json({
+              valid: false,
+              output: `PROOF VALID but batch is OUT OF SPEC:\n${violations.join('\n')}`,
+              violations,
+              orderID: id,
+            });
+          }
+        }
       }
-      return res.status(500).json({ error: `Verification failed: ${snarkErr.message}` });
-    }
 
-    res.json({ valid: isValid, orderID: id });
+      res.json({ valid, output, orderID: id });
+    } finally {
+      try { fs.unlinkSync(tmpProof);  } catch {}
+      try { fs.unlinkSync(tmpPublic); } catch {}
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

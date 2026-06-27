@@ -12,16 +12,16 @@ import {
   LoadingSpinner,
 } from '../components/ui/GlassmorphicComponents';
 import { useToast } from '../hooks/useNotification';
-import { orderService, channelService } from '../services/api';
+import { orderService, channelService, channelReqsService } from '../services/api';
 
 export function OrderCreatePage() {
   const navigate = useNavigate();
   const { error, success } = useToast();
 
-  const [user, setUser] = useState(null);
-  const [channels, setChannels] = useState([]);
+  const [user,            setUser]            = useState(null);
+  const [channels,        setChannels]        = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting,      setSubmitting]      = useState(false);
 
   const [formData, setFormData] = useState({
     channel: '',
@@ -31,74 +31,63 @@ export function OrderCreatePage() {
     specifications: '',
     deadline: '',
   });
-
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
-    if (!userData) {
-      navigate('/login');
-      return;
-    }
-
+    if (!userData) { navigate('/login'); return; }
     const parsedUser = JSON.parse(userData);
     setUser(parsedUser);
 
-    // Fetch channels
-    const fetchChannels = async () => {
-      try {
-        const response = await channelService.getChannels(parsedUser.id);
-        const activeChannels = response.data.filter((c) => c.status === 'active');
-        setChannels(activeChannels);
-      } catch (err) {
-        error('Failed to load channels');
-      } finally {
-        setLoadingChannels(false);
-      }
-    };
+    channelService.getChannels(parsedUser.id)
+      .then(res => {
+        // Only show channels where the current user is in the manufacturer slot
+        const mfgChannels = (res.data || []).filter(c =>
+          c.status === 'active' &&
+          c.manufacturerOrgId._id?.toString() === parsedUser.id?.toString()
+        );
+        setChannels(mfgChannels);
+      })
+      .catch(() => error('Failed to load channels'))
+      .finally(() => setLoadingChannels(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    fetchChannels();
-  }, [navigate, error]);
-
-  const validateForm = () => {
-    const newErrors = {};
-
-    if (!formData.channel) newErrors.channel = 'Please select a channel';
-    if (!formData.supplierMSP) newErrors.supplierMSP = 'Please select a supplier';
-    if (!formData.componentType.trim()) newErrors.componentType = 'Component type is required';
-    if (!formData.quantity || formData.quantity <= 0) newErrors.quantity = 'Quantity must be greater than 0';
-    if (!formData.specifications.trim()) newErrors.specifications = 'Specifications are required';
-    if (!formData.deadline) newErrors.deadline = 'Deadline is required';
-
-    // Check if deadline is in the future
-    const deadlineDate = new Date(formData.deadline);
-    if (deadlineDate <= new Date()) {
-      newErrors.deadline = 'Deadline must be in the future';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const validate = () => {
+    const e = {};
+    if (!formData.channel)               e.channel       = 'Please select a channel';
+    if (!formData.componentType.trim())  e.componentType = 'Component type is required';
+    if (!formData.quantity || formData.quantity <= 0) e.quantity = 'Quantity must be > 0';
+    if (!formData.specifications.trim()) e.specifications = 'Specifications are required';
+    if (!formData.deadline)              e.deadline      = 'Deadline is required';
+    if (formData.deadline && new Date(formData.deadline) <= new Date())
+      e.deadline = 'Deadline must be in the future';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!validateForm()) return;
-    if (!user) return;
+    if (!validate() || !user) return;
 
     setSubmitting(true);
-
     try {
-      const selectedChannel = channels.find((c) => c._id === formData.channel);
+      // Gate: requirements must exist before order creation
+      const reqsRes = await channelReqsService.get(formData.channel);
+      if (!reqsRes.data || !reqsRes.data.params?.length) {
+        error('Set channel requirements before creating an order. Go to Requirements first.');
+        setSubmitting(false);
+        return;
+      }
 
+      const selectedChannel = channels.find(c => c._id === formData.channel);
       const orderData = {
         manufacturerMSP: user.mspId,
-        supplierMSP: formData.supplierMSP,
-        componentType: formData.componentType,
-        quantity: parseInt(formData.quantity),
-        specifications: formData.specifications,
-        deadline: formData.deadline,
-        channel: selectedChannel.channelName,
+        supplierMSP:     selectedChannel.supplierOrgId.mspId,
+        componentType:   formData.componentType,
+        quantity:        parseInt(formData.quantity),
+        specifications:  formData.specifications,
+        deadline:        formData.deadline,
+        channel:         selectedChannel.channelName,
       };
 
       const response = await orderService.createOrder(orderData);
@@ -115,40 +104,17 @@ export function OrderCreatePage() {
 
   if (loadingChannels) {
     return (
-      <Layout
-        user={user}
-        onLogout={() => localStorage.removeItem('user')}
-      >
-        <div className="flex justify-center items-center h-96">
-          <LoadingSpinner />
-        </div>
+      <Layout user={user} onLogout={() => localStorage.removeItem('user')}>
+        <div className="flex justify-center items-center h-96"><LoadingSpinner /></div>
       </Layout>
     );
   }
 
-  const selectedChannelData = channels.find((c) => c._id === formData.channel);
-  const supplierOptions = selectedChannelData
-    ? [
-        {
-          value: selectedChannelData.manufacturerOrgId._id === user.id
-            ? selectedChannelData.supplierOrgId.mspId
-            : selectedChannelData.manufacturerOrgId.mspId,
-          label: selectedChannelData.manufacturerOrgId._id === user.id
-            ? selectedChannelData.supplierOrgId.name
-            : selectedChannelData.manufacturerOrgId.name,
-        },
-      ]
-    : [];
+  const selectedChannelData = channels.find(c => c._id === formData.channel);
 
   return (
-    <Layout
-      user={user}
-      onLogout={() => localStorage.removeItem('user')}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+    <Layout user={user} onLogout={() => localStorage.removeItem('user')}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <button
           onClick={() => navigate('/dashboard')}
           className="flex items-center gap-2 text-white/70 hover:text-white mb-6 transition-colors"
@@ -159,143 +125,108 @@ export function OrderCreatePage() {
 
         <GlassmorphicCard className="elevated mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Create New Order</h1>
-          <p className="text-white/70">Define your component requirements and specifications</p>
+          <p className="text-white/70">You must have set channel requirements before submitting an order.</p>
         </GlassmorphicCard>
 
-        <GlassmorphicCard className="elevated">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Channel Selection */}
-            <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
-                Channel *
-              </label>
-              <GlassmorphicSelect
-                value={formData.channel}
-                onChange={(e) => {
-                  setFormData((prev) => ({
-                    ...prev,
-                    channel: e.target.value,
-                    supplierMSP: '',
-                  }));
-                }}
-                options={channels.map((c) => ({
-                  value: c._id,
-                  label: c.channelName,
-                }))}
-                error={!!errors.channel}
-                errorMessage={errors.channel}
-              />
-            </div>
+        {channels.length === 0 ? (
+          <GlassmorphicCard className="p-8 text-center">
+            <p className="text-white/70 mb-4">
+              You have no active channels where you are the manufacturer.
+              Only the org that initiated the channel connection can create orders.
+            </p>
+            <GlassmorphicButton onClick={() => navigate('/channels')}>Go to Channels</GlassmorphicButton>
+          </GlassmorphicCard>
+        ) : (
+          <GlassmorphicCard className="elevated">
+            <form onSubmit={handleSubmit} className="space-y-6">
 
-            {/* Supplier Selection */}
-            {selectedChannelData && (
+              {/* Channel Selection */}
               <div>
-                <label className="block text-white/80 text-sm font-medium mb-2">
-                  Supplier *
-                </label>
+                <label className="block text-white/80 text-sm font-medium mb-2">Channel *</label>
                 <GlassmorphicSelect
-                  value={formData.supplierMSP}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, supplierMSP: e.target.value }))}
-                  options={supplierOptions}
-                  error={!!errors.supplierMSP}
-                  errorMessage={errors.supplierMSP}
+                  value={formData.channel}
+                  onChange={e => setFormData(p => ({ ...p, channel: e.target.value, supplierMSP: '' }))}
+                  options={channels.map(c => ({
+                    value: c._id,
+                    label: `${c.channelName} → supplier: ${c.supplierOrgId?.name}`,
+                  }))}
+                  error={!!errors.channel}
+                  errorMessage={errors.channel}
                 />
               </div>
-            )}
 
-            {/* Component Type */}
-            <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
-                Component Type *
-              </label>
-              <GlassmorphicInput
-                type="text"
-                placeholder="e.g., Lithium Battery, Semiconductor"
-                value={formData.componentType}
-                onChange={(e) => {
-                  setFormData((prev) => ({ ...prev, componentType: e.target.value }));
-                  setErrors((prev) => ({ ...prev, componentType: '' }));
-                }}
-                error={!!errors.componentType}
-                errorMessage={errors.componentType}
-              />
-            </div>
+              {/* Supplier display (auto-filled from channel) */}
+              {selectedChannelData && (
+                <div>
+                  <label className="block text-white/80 text-sm font-medium mb-2">Supplier</label>
+                  <div className="bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-sm text-white/70">
+                    {selectedChannelData.supplierOrgId?.name} ({selectedChannelData.supplierOrgId?.mspId})
+                  </div>
+                </div>
+              )}
 
-            {/* Quantity */}
-            <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
-                Quantity *
-              </label>
-              <GlassmorphicInput
-                type="number"
-                placeholder="Enter quantity"
-                value={formData.quantity}
-                onChange={(e) => {
-                  setFormData((prev) => ({ ...prev, quantity: e.target.value }));
-                  setErrors((prev) => ({ ...prev, quantity: '' }));
-                }}
-                error={!!errors.quantity}
-                errorMessage={errors.quantity}
-                min="1"
-              />
-            </div>
+              {/* Component Type */}
+              <div>
+                <label className="block text-white/80 text-sm font-medium mb-2">Component Type *</label>
+                <GlassmorphicInput
+                  type="text"
+                  placeholder="e.g. Lithium Battery, Semiconductor"
+                  value={formData.componentType}
+                  onChange={e => { setFormData(p => ({ ...p, componentType: e.target.value })); setErrors(p => ({ ...p, componentType: '' })); }}
+                  error={!!errors.componentType}
+                  errorMessage={errors.componentType}
+                />
+              </div>
 
-            {/* Specifications */}
-            <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
-                Specifications *
-              </label>
-              <GlassmorphicTextarea
-                placeholder="Detailed specifications, requirements, standards..."
-                value={formData.specifications}
-                onChange={(e) => {
-                  setFormData((prev) => ({ ...prev, specifications: e.target.value }));
-                  setErrors((prev) => ({ ...prev, specifications: '' }));
-                }}
-                error={!!errors.specifications}
-                errorMessage={errors.specifications}
-                rows={4}
-              />
-            </div>
+              {/* Quantity */}
+              <div>
+                <label className="block text-white/80 text-sm font-medium mb-2">Quantity *</label>
+                <GlassmorphicInput
+                  type="number" min="1"
+                  placeholder="Enter quantity"
+                  value={formData.quantity}
+                  onChange={e => { setFormData(p => ({ ...p, quantity: e.target.value })); setErrors(p => ({ ...p, quantity: '' })); }}
+                  error={!!errors.quantity}
+                  errorMessage={errors.quantity}
+                />
+              </div>
 
-            {/* Deadline */}
-            <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
-                Deadline *
-              </label>
-              <GlassmorphicInput
-                type="datetime-local"
-                value={formData.deadline}
-                onChange={(e) => {
-                  setFormData((prev) => ({ ...prev, deadline: e.target.value }));
-                  setErrors((prev) => ({ ...prev, deadline: '' }));
-                }}
-                error={!!errors.deadline}
-                errorMessage={errors.deadline}
-              />
-            </div>
+              {/* Specifications */}
+              <div>
+                <label className="block text-white/80 text-sm font-medium mb-2">Specifications *</label>
+                <GlassmorphicTextarea
+                  placeholder="Detailed specifications, requirements, standards…"
+                  value={formData.specifications}
+                  onChange={e => { setFormData(p => ({ ...p, specifications: e.target.value })); setErrors(p => ({ ...p, specifications: '' })); }}
+                  error={!!errors.specifications}
+                  errorMessage={errors.specifications}
+                  rows={4}
+                />
+              </div>
 
-            {/* Buttons */}
-            <div className="flex gap-4 pt-4">
-              <GlassmorphicButton
-                type="button"
-                variant="secondary"
-                onClick={() => navigate('/dashboard')}
-                className="flex-1"
-              >
-                Cancel
-              </GlassmorphicButton>
-              <GlassmorphicButton
-                type="submit"
-                disabled={submitting}
-                loading={submitting}
-                className="flex-1"
-              >
-                Create Order
-              </GlassmorphicButton>
-            </div>
-          </form>
-        </GlassmorphicCard>
+              {/* Deadline */}
+              <div>
+                <label className="block text-white/80 text-sm font-medium mb-2">Deadline *</label>
+                <GlassmorphicInput
+                  type="date"
+                  value={formData.deadline}
+                  onChange={e => { setFormData(p => ({ ...p, deadline: e.target.value })); setErrors(p => ({ ...p, deadline: '' })); }}
+                  error={!!errors.deadline}
+                  errorMessage={errors.deadline}
+                />
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <GlassmorphicButton type="button" variant="secondary" onClick={() => navigate('/dashboard')} className="flex-1">
+                  Cancel
+                </GlassmorphicButton>
+                <GlassmorphicButton type="submit" disabled={submitting} loading={submitting} className="flex-1">
+                  Create Order
+                </GlassmorphicButton>
+              </div>
+            </form>
+          </GlassmorphicCard>
+        )}
       </motion.div>
     </Layout>
   );

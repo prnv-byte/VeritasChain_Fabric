@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Eye, CheckCircle, XCircle } from 'lucide-react';
+import { Eye, PackageSearch } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import {
   GlassmorphicCard,
@@ -15,6 +15,8 @@ export function OrdersPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { error } = useToast();
+
+  const channelQuery = new URLSearchParams(location.search).get('channel');
 
   const [user, setUser] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -79,17 +81,6 @@ export function OrdersPage() {
     }
   };
 
-  const getStatusBadge = (status) => {
-    const badges = {
-      PENDING: 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30',
-      FULFILLED: 'bg-blue-500/20 text-blue-200 border-blue-400/30',
-      ACCEPTED: 'bg-green-500/20 text-green-200 border-green-400/30',
-      REJECTED: 'bg-red-500/20 text-red-200 border-red-400/30',
-      CANCELLED: 'bg-gray-500/20 text-gray-200 border-gray-400/30',
-    };
-    return badges[status] || badges.PENDING;
-  };
-
   if (!user) return null;
 
   if (loading) {
@@ -126,16 +117,17 @@ export function OrdersPage() {
 
         {/* Channel Selection */}
         {channels.length > 0 && (
-          <GlassmorphicCard className="mb-6">
+          <GlassmorphicCard className="mb-4 p-4">
+            <p className="text-xs uppercase text-white/40 font-semibold mb-2 tracking-widest">Channel</p>
             <div className="flex gap-2 flex-wrap">
               {channels.map((channel) => (
                 <button
                   key={channel._id}
                   onClick={() => handleChannelChange(channel._id)}
-                  className={`px-4 py-2 rounded-lg transition-all ${
+                  className={`px-4 py-2 rounded-lg text-sm transition-all ${
                     selectedChannel?._id === channel._id
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                      ? 'bg-indigo-500/30 border border-indigo-400/50 text-white'
+                      : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80'
                   }`}
                 >
                   {channel.channelName}
@@ -146,18 +138,19 @@ export function OrdersPage() {
         )}
 
         {/* Filter Buttons */}
-        <div className="flex gap-2 mb-6 flex-wrap">
+        <div className="flex gap-2 mb-6 flex-wrap items-center">
+          <span className="text-xs uppercase text-white/40 font-semibold tracking-widest mr-1">Filter:</span>
           {['all', 'PENDING', 'FULFILLED', 'ACCEPTED', 'REJECTED'].map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-lg text-sm transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 filter === status
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'
               }`}
             >
-              {status === 'all' ? 'All Orders' : status}
+              {status === 'all' ? 'All' : status}
             </button>
           ))}
         </div>
@@ -165,8 +158,9 @@ export function OrdersPage() {
         {/* Orders List */}
         {filteredOrders.length === 0 ? (
           <GlassmorphicCard>
-            <div className="text-center py-12">
-              <p className="text-white/70 mb-4">No orders found</p>
+            <div className="text-center py-14">
+              <PackageSearch className="w-12 h-12 text-white/20 mx-auto mb-4" />
+              <p className="text-white/50 text-sm mb-5">No orders found</p>
               <GlassmorphicButton onClick={() => navigate('/orders/create')}>
                 Create First Order
               </GlassmorphicButton>

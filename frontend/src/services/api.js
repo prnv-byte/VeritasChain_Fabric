@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -44,11 +44,29 @@ export const channelService = {
   requestChannel: (fromOrgId, toOrgId) =>
     api.post('/channels/request', { fromOrgId, toOrgId }),
 
+  declineChannel: (id) =>
+    api.post(`/channels/${id}/decline`),
+
   getChannels: (orgId) =>
     api.get('/channels', { params: { orgId } }),
 
   getChannel: (id) =>
     api.get(`/channels/${id}`),
+};
+
+// Channel Requirements (MongoDB-backed, Phase 3)
+export const channelReqsService = {
+  get:       (channelId)                    => api.get('/channel-reqs', { params: { channelId } }),
+  save:      (channelId, params, batchRows) => api.post('/channel-reqs', { channelId, params, batchRows }),
+  downloadPk: async (channelId) => {
+    const res = await api.get('/channel-reqs/pk', { params: { channelId }, responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a   = document.createElement('a');
+    a.href     = url;
+    a.download = 'circuit.pk';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // Order endpoints
@@ -65,8 +83,10 @@ export const orderService = {
   getOrderHistory: (id, channel, mspId) =>
     api.get(`/orders/${id}/history`, { params: { channel, mspId } }),
 
-  fulfillOrder: (id, data) =>
-    api.post(`/orders/${id}/fulfill`, data),
+  fulfillOrder: (id, formData) =>
+    api.post(`/orders/${id}/fulfill`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 
   verifyOrder: (id, data) =>
     api.post(`/orders/${id}/verify`, data),

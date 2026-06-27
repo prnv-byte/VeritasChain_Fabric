@@ -123,11 +123,6 @@ export function LoginPage() {
             </p>
           </div>
 
-          <div className="mt-4 p-4 bg-blue-500/10 border border-blue-400/30 rounded-lg">
-            <p className="text-blue-200 text-xs">
-              <strong>Demo:</strong> Use any registered email/username and password to login.
-            </p>
-          </div>
         </GlassmorphicCard>
 
         <motion.div
@@ -136,8 +131,8 @@ export function LoginPage() {
           transition={{ delay: 0.3, duration: 0.3 }}
           className="mt-6 text-center"
         >
-          <Link to="/admin-login" className="text-white/50 hover:text-white/70 text-sm">
-            Admin Login
+          <Link to="/admin-login" className="text-white/40 hover:text-white/60 text-xs tracking-wide">
+            Admin access →
           </Link>
         </motion.div>
       </motion.div>

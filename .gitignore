@@ -33,6 +33,13 @@ chaincode/order/vendor/
 chaincode/*/*.test
 chaincode/order/order
 
+# ── ZK compiled binaries — rebuild with: cd zk && go build -o dist/... ─────────
+zk/dist/
+
+# ── ZK generated keys & supplier proofs — NEVER commit (private proving keys) ──
+backend/keys/
+backend/proofs/
+
 # ── Environment files ─────────────────────────────────────────────────────────
 .env
 *.env

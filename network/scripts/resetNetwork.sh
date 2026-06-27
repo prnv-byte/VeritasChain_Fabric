@@ -32,6 +32,21 @@ if [ -d "${NETWORK_DIR}/organizations" ] || [ -d "${NETWORK_DIR}/ledger" ]; then
 fi
 rm -rf "${NETWORK_DIR}/channel-artifacts"
 
+# Wipe all generated ZK keys from the backend
+BACKEND_KEYS="${NETWORK_DIR}/../backend/keys"
+if [ -d "${BACKEND_KEYS}" ]; then
+  echo "Wiping backend ZK keys..."
+  rm -rf "${BACKEND_KEYS}"
+fi
+
+# Wipe all supplier proof files
+BACKEND_PROOFS="${NETWORK_DIR}/../backend/proofs"
+if [ -d "${BACKEND_PROOFS}" ]; then
+  echo "Wiping supplier proof files..."
+  rm -rf "${BACKEND_PROOFS}"
+  mkdir -p "${BACKEND_PROOFS}"
+fi
+
 # Clean up any temp configtx dirs
 rm -rf /tmp/configtx-*
 

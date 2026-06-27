@@ -19,7 +19,8 @@ app.use('/orgs',     require('./routes/orgs'));
 app.use('/auth',      require('./routes/auth'));
 app.use('/channels', require('./routes/channels'));
 app.use('/orders',       require('./routes/orders'));
-app.use('/requirements', require('./routes/requirements'));
+app.use('/requirements',  require('./routes/requirements'));
+app.use('/channel-reqs', require('./routes/channelReqs'));
 app.use('/admin',        require('./routes/admin'));
 
 const PORT = process.env.PORT || 3000;
@@ -47,7 +48,7 @@ connectDB()
     if (activeOrgs.length) {
       console.log(`[startup] Restarting containers for ${activeOrgs.length} active org(s)...`);
       for (const org of activeOrgs) {
-        restartOrgContainers(org.toObject()).catch(err =>
+        await restartOrgContainers(org.toObject()).catch(err =>
           console.error(`[startup] Failed to restart containers for ${org.slug}:`, err.message)
         );
       }
@@ -56,9 +57,32 @@ connectDB()
     if (activeChannels.length) {
       console.log(`[startup] Restarting orderers for ${activeChannels.length} active channel(s)...`);
       for (const ch of activeChannels) {
-        restartChannelOrderer(ch.toObject()).catch(err =>
+        await restartChannelOrderer(ch.toObject()).catch(err =>
           console.error(`[startup] Failed to restart orderer for ${ch.channelName}:`, err.message)
         );
+      }
+    }
+
+    // Heal ZK keys stuck in 'generating' from a previous run that was interrupted.
+    // If the pk file already exists on disk → mark ready. Otherwise re-run vc-setup.
+    const path = require('path');
+    const fs   = require('fs');
+    const ChannelRequirement = require('./models/ChannelRequirement');
+    const { runSetupForReq } = require('./routes/channelReqs');
+
+    const stuckZK = await ChannelRequirement.find({ zkeyStatus: 'generating' });
+    if (stuckZK.length) {
+      console.log(`[startup] Found ${stuckZK.length} ZK requirement(s) stuck in 'generating' — healing...`);
+      for (const req of stuckZK) {
+        const pkPath = req.pkPath || path.join(__dirname, '..', 'keys', 'channels', req.channelId.toString(), 'circuit.pk');
+        const vkPath = req.vkPath || path.join(__dirname, '..', 'keys', 'channels', req.channelId.toString(), 'circuit.vk');
+        if (fs.existsSync(pkPath) && fs.existsSync(vkPath)) {
+          console.log(`[startup] ZK keys already on disk for channel ${req.channelId} — marking ready.`);
+          await ChannelRequirement.findByIdAndUpdate(req._id, { zkeyStatus: 'ready', pkPath, vkPath });
+        } else {
+          console.log(`[startup] Re-running vc-setup for channel ${req.channelId}...`);
+          runSetupForReq(req).catch(err => console.error(`[startup] vc-setup re-run failed:`, err.message));
+        }
       }
     }
 
