@@ -8,7 +8,6 @@ import {
   GlassmorphicInput,
   GlassmorphicButton,
   GlassmorphicSelect,
-  GlassmorphicTextarea,
   LoadingSpinner,
 } from '../components/ui/GlassmorphicComponents';
 import { useToast } from '../hooks/useNotification';
@@ -28,7 +27,6 @@ export function OrderCreatePage() {
     supplierMSP: '',
     componentType: '',
     quantity: '',
-    specifications: '',
     deadline: '',
   });
 
@@ -67,7 +65,6 @@ export function OrderCreatePage() {
     if (!formData.supplierMSP) newErrors.supplierMSP = 'Please select a supplier';
     if (!formData.componentType.trim()) newErrors.componentType = 'Component type is required';
     if (!formData.quantity || formData.quantity <= 0) newErrors.quantity = 'Quantity must be greater than 0';
-    if (!formData.specifications.trim()) newErrors.specifications = 'Specifications are required';
     if (!formData.deadline) newErrors.deadline = 'Deadline is required';
 
     // Check if deadline is in the future
@@ -96,7 +93,6 @@ export function OrderCreatePage() {
         supplierMSP: formData.supplierMSP,
         componentType: formData.componentType,
         quantity: parseInt(formData.quantity),
-        specifications: formData.specifications,
         deadline: formData.deadline,
         channel: selectedChannel.channelName,
       };
@@ -159,7 +155,7 @@ export function OrderCreatePage() {
 
         <GlassmorphicCard className="elevated mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Create New Order</h1>
-          <p className="text-white/70">Define your component requirements and specifications</p>
+          <p className="text-white/70">Define your component requirements and delivery details</p>
         </GlassmorphicCard>
 
         <GlassmorphicCard className="elevated">
@@ -237,24 +233,6 @@ export function OrderCreatePage() {
                 error={!!errors.quantity}
                 errorMessage={errors.quantity}
                 min="1"
-              />
-            </div>
-
-            {/* Specifications */}
-            <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
-                Specifications *
-              </label>
-              <GlassmorphicTextarea
-                placeholder="Detailed specifications, requirements, standards..."
-                value={formData.specifications}
-                onChange={(e) => {
-                  setFormData((prev) => ({ ...prev, specifications: e.target.value }));
-                  setErrors((prev) => ({ ...prev, specifications: '' }));
-                }}
-                error={!!errors.specifications}
-                errorMessage={errors.specifications}
-                rows={4}
               />
             </div>
 

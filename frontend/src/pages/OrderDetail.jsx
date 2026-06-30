@@ -27,6 +27,48 @@ function readFileAsText(file) {
   });
 }
 
+function getVerificationStatus(result) {
+  if (!result) return null;
+
+  const status = result.status || (result.valid ? 'verified' : 'invalid');
+  if (status === 'verified') {
+    return {
+      tone: 'success',
+      title: 'Proof verified',
+      description: 'The proof passed verification and all listed measurements are within the required range.',
+      icon: '✓',
+      className: 'bg-emerald-500/10 text-emerald-200 border border-emerald-400/20',
+      metrics: result.metrics || [],
+    };
+  }
+
+  if (status === 'out_of_range') {
+    return {
+      tone: 'warning',
+      title: 'Proof verified but specs are out of range',
+      description: 'The proof passed verification, but the highlighted measurements fall outside the required range.',
+      icon: '⚠',
+      className: 'bg-amber-500/10 text-amber-100 border border-amber-400/20',
+      metrics: result.metrics || [],
+    };
+  }
+
+  return {
+    tone: 'error',
+    title: 'Proof not verified',
+    description: 'The proof could not be verified successfully.',
+    icon: '✗',
+    className: 'bg-rose-500/10 text-rose-200 border border-rose-400/20',
+    metrics: [],
+  };
+}
+
+function formatMetricValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'number') return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+  return String(value);
+}
+
 export default function OrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -158,7 +200,14 @@ export default function OrderDetail() {
         error(result.error);
       } else {
         setVerifyResult(result);
-        success(result.valid ? 'Proof verified successfully' : 'Proof verification failed');
+        const status = result.status || (result.valid ? 'verified' : 'invalid');
+        if (status === 'verified') {
+          success('Proof verified successfully');
+        } else if (status === 'out_of_range') {
+          success('Proof verified but some specs are out of range');
+        } else {
+          success('Proof verification failed');
+        }
       }
     } catch (err) {
       error(err.response?.data?.error || err.message || 'Verification failed.');
@@ -243,6 +292,7 @@ export default function OrderDetail() {
 
   const isManufacturer = user?.mspId === order.manufacturerMSP;
   const isSupplier = user?.mspId === order.supplierMSP;
+  const verificationState = getVerificationStatus(verifyResult);
 
   return (
     <Layout user={user} onLogout={() => localStorage.removeItem('user')}>
@@ -403,9 +453,34 @@ export default function OrderDetail() {
                     Run ZK Verification
                   </GlassmorphicButton>
 
-                  {verifyResult && (
-                    <div className={`rounded-2xl p-4 text-sm ${verifyResult.valid ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-400/20' : 'bg-rose-500/10 text-rose-200 border border-rose-400/20'}`}>
-                      {verifyResult.valid ? 'Proof is valid.' : 'Proof is invalid.'}
+                  {verificationState && (
+                    <div className={`rounded-2xl p-4 text-sm ${verificationState.className}`}>
+                      <div className="flex items-start gap-3">
+                        <span className="text-lg">{verificationState.icon}</span>
+                        <div>
+                          <p className="font-semibold">{verificationState.title}</p>
+                          <p className="text-sm mt-1">{verificationState.description}</p>
+                        </div>
+                      </div>
+
+                      {verificationState.metrics?.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {verificationState.metrics.map((metric) => (
+                            <div
+                              key={metric.name}
+                              className={`rounded-xl border px-3 py-2 text-sm ${metric.inRange ? 'border-white/10 bg-white/5' : 'border-amber-400/30 bg-amber-500/10 text-amber-100'}`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-medium">{metric.name}</span>
+                                <span>{formatMetricValue(metric.actualValue)}</span>
+                              </div>
+                              <p className="text-xs opacity-80 mt-1">
+                                Required range: {formatMetricValue(metric.min)} – {formatMetricValue(metric.max)}{metric.unit ? ` ${metric.unit}` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
