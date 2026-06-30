@@ -9,6 +9,32 @@ const CC_NAME = 'veritasorder';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+function collectNumericValues(value) {
+  const values = [];
+  const visit = (node) => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (node && typeof node === 'object') {
+      Object.values(node).forEach(visit);
+      return;
+    }
+    if (typeof node === 'number' && Number.isFinite(node)) {
+      values.push(node);
+      return;
+    }
+    if (typeof node === 'string') {
+      const trimmed = node.trim();
+      if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+        values.push(Number(trimmed));
+      }
+    }
+  };
+  visit(value);
+  return values;
+}
+
 function decodeResult(result) {
   const raw = Buffer.from(result).toString('utf8');
   try { return JSON.parse(raw); } catch { return raw; }
@@ -42,9 +68,9 @@ router.post('/', async (req, res) => {
             specifications, deadline, channel } = req.body;
 
     if (!manufacturerMSP || !supplierMSP || !componentType || !quantity ||
-        !specifications || !deadline || !channel) {
+        !deadline || !channel) {
       return res.status(400).json({
-        error: 'Missing required fields: manufacturerMSP, supplierMSP, componentType, quantity, specifications, deadline, channel',
+        error: 'Missing required fields: manufacturerMSP, supplierMSP, componentType, quantity, deadline, channel',
       });
     }
 
@@ -56,7 +82,7 @@ router.post('/', async (req, res) => {
         orderID,
         String(quantity),
         componentType,
-        specifications,
+        specifications || '',
         supplierMSP,
         deadline,
       );
@@ -216,7 +242,32 @@ router.post('/:id/run-verify', async (req, res) => {
       return res.status(500).json({ error: `Verification failed: ${snarkErr.message}` });
     }
 
-    res.json({ valid: isValid, orderID: id });
+    const ranges = [];
+    try {
+      const parsedRanges = JSON.parse(requirements.zkRanges || '[]');
+      const signals = collectNumericValues(publicSignals);
+      parsedRanges.forEach((range, index) => {
+        const actualValue = signals[index] ?? null;
+        const min = Number(range.min);
+        const max = Number(range.max);
+        const inRange = actualValue !== null && Number.isFinite(min) && Number.isFinite(max) && actualValue >= min && actualValue <= max;
+        ranges.push({
+          name: range.name || `Parameter ${index + 1}`,
+          actualValue,
+          min,
+          max,
+          unit: range.unit || '',
+          inRange,
+        });
+      });
+    } catch (_) {
+      // ignore malformed range data and fall back to simple validity response
+    }
+
+    const outOfRange = ranges.filter((metric) => metric.actualValue !== null && !metric.inRange);
+    const status = isValid ? (outOfRange.length > 0 ? 'out_of_range' : 'verified') : 'invalid';
+
+    res.json({ valid: isValid, status, orderID: id, metrics: ranges });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
