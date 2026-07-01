@@ -121,8 +121,13 @@ type SmartContract struct {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-func now() string {
-	return time.Now().UTC().Format(time.RFC3339)
+// now returns the transaction timestamp — identical on every peer for the same tx.
+func now(ctx contractapi.TransactionContextInterface) string {
+	ts, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil || ts == nil {
+		return time.Now().UTC().Format(time.RFC3339)
+	}
+	return time.Unix(ts.Seconds, int64(ts.Nanos)).UTC().Format(time.RFC3339)
 }
 
 func callerMSP(ctx contractapi.TransactionContextInterface) (string, error) {
@@ -199,7 +204,7 @@ func (s *SmartContract) SetRequirements(
 		GlobalRequirements: globalRequirements,
 		ZKRanges:           zkRanges,
 		VerificationKey:    verificationKey,
-		SetAt:              now(),
+		SetAt:              now(ctx),
 	}
 
 	data, err := json.Marshal(req)
@@ -289,7 +294,7 @@ func (s *SmartContract) CreateOrder(
 		Specifications:  specifications,
 		Deadline:        deadline,
 		Status:          StatusPending,
-		CreatedAt:       now(),
+		CreatedAt:       now(ctx),
 	}
 
 	if err := putOrder(ctx, order); err != nil {
@@ -343,7 +348,7 @@ func (s *SmartContract) FulfillOrder(
 	order.ZKProof       = zkProof
 	order.PublicSignals = publicSignals
 	order.Status        = StatusFulfilled
-	order.FulfilledAt   = now()
+	order.FulfilledAt   = now(ctx)
 
 	if err := putOrder(ctx, order); err != nil {
 		return err
@@ -382,7 +387,7 @@ func (s *SmartContract) VerifyAndAccept(
 	order.Status             = StatusAccepted
 	order.VerificationResult = "PASS"
 	order.VerifiedBy         = msp
-	order.VerifiedAt         = now()
+	order.VerifiedAt         = now(ctx)
 
 	if err := putOrder(ctx, order); err != nil {
 		return err
@@ -425,7 +430,7 @@ func (s *SmartContract) RejectOrder(
 	order.VerificationResult = "FAIL"
 	order.RejectionReason    = reason
 	order.VerifiedBy         = msp
-	order.VerifiedAt         = now()
+	order.VerifiedAt         = now(ctx)
 
 	if err := putOrder(ctx, order); err != nil {
 		return err
@@ -471,7 +476,7 @@ func (s *SmartContract) CancelOrder(
 		OrderID:    order.OrderID,
 		Status:     order.Status,
 		VerifiedBy: msp,
-		VerifiedAt: now(),
+		VerifiedAt: now(ctx),
 	})
 }
 
@@ -505,7 +510,7 @@ func (s *SmartContract) SubmitFeedback(
 	}
 
 	order.FeedbackText = feedbackText
-	order.FeedbackAt   = now()
+	order.FeedbackAt   = now(ctx)
 
 	if err := putOrder(ctx, order); err != nil {
 		return err

@@ -46,6 +46,12 @@ if [ $RC -ne 0 ] && ! echo "$OUT" | grep -q "already registered"; then
 fi
 
 echo "[${ORDERER_NAME}] Enrolling MSP cert..."
+# Remove any stale partial enrollment (may be root-owned from a previous Docker run)
+if [ -d "${ORDERER_DIR}" ]; then
+  docker run --rm \
+    -v "$(dirname "${ORDERER_DIR}"):/fix" \
+    alpine rm -rf "/fix/$(basename "${ORDERER_DIR}")" 2>/dev/null || rm -rf "${ORDERER_DIR}" 2>/dev/null || true
+fi
 mkdir -p "${ORDERER_DIR}"
 fabric-ca-client enroll \
   -u "https://${ORDERER_NAME}:${ORDERER_NAME}pw@localhost:${CA_PORT}" \

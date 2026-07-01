@@ -141,6 +141,23 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ── POST /channels/:id/decline ───────────────────────────────────────────────
+// The receiving org calls this to reject an incoming channel request.
+router.post('/:id/decline', async (req, res) => {
+  try {
+    const channel = await Channel.findById(req.params.id);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    if (channel.status !== 'pending') {
+      return res.status(400).json({ error: 'Only pending channels can be declined' });
+    }
+    channel.status = 'declined';
+    await channel.save();
+    res.json({ message: 'Channel request declined', channel });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /channels/:id ────────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {

@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, LogOut } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Menu, X, LogOut, LayoutDashboard, GitBranch, ClipboardList, ShoppingCart } from 'lucide-react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import '../styles/layout.css';
+
+const NAV_LINKS = [
+  { to: '/dashboard',    label: 'Dashboard',    Icon: LayoutDashboard },
+  { to: '/channels',     label: 'Channels',     Icon: GitBranch },
+  { to: '/requirements', label: 'Requirements', Icon: ClipboardList },
+  { to: '/orders',       label: 'Orders',       Icon: ShoppingCart },
+];
 
 export function Layout({ children, user, onLogout, sidebarContent }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -35,7 +42,7 @@ export function Layout({ children, user, onLogout, sidebarContent }) {
               </button>
             </div>
 
-            {/* User Profile Section */}
+            {/* User Profile */}
             {user && (
               <div className="sidebar-user glass-card light">
                 <div className="mb-2">
@@ -53,14 +60,30 @@ export function Layout({ children, user, onLogout, sidebarContent }) {
               </div>
             )}
 
-            {/* Custom Sidebar Content */}
+            {/* Persistent Navigation */}
+            <nav className="sidebar-nav">
+              {NAV_LINKS.map(({ to, label, Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) => `sidebar-nav-link${isActive ? ' active' : ''}`}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Icon size={16} />
+                    {label}
+                  </span>
+                </NavLink>
+              ))}
+            </nav>
+
+            {/* Per-page custom content */}
             {sidebarContent && (
               <div className="sidebar-content">
                 {sidebarContent}
               </div>
             )}
 
-            {/* Logout Button */}
+            {/* Logout */}
             <button
               onClick={handleLogout}
               className="sidebar-logout glass-button w-full flex items-center justify-center gap-2"
@@ -74,7 +97,6 @@ export function Layout({ children, user, onLogout, sidebarContent }) {
 
       {/* Main Content */}
       <div className="main-content">
-        {/* Header */}
         <header className="header glass-card">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -86,7 +108,6 @@ export function Layout({ children, user, onLogout, sidebarContent }) {
           <div className="header-spacer" />
         </header>
 
-        {/* Content */}
         <main className="main-scroll glass-container">
           {children}
         </main>

@@ -260,7 +260,10 @@ async function restartChannelOrderer(channel) {
   ].join(' \\\n  ');
 
   await execAsync(cmd);
-  console.log(`[restart] Orderer ${ordererHost} started on port ${channel.ordererPort}.`);
+  // Wait for the orderer gRPC port to actually accept connections before returning
+  console.log(`[restart] Orderer ${ordererHost} started on port ${channel.ordererPort}. Waiting for gRPC to be ready...`);
+  await new Promise(r => setTimeout(r, 8000));
+  console.log(`[restart] Orderer ${ordererHost} ready.`);
 }
 
 // ── Full org provisioning ─────────────────────────────────────────────────────
