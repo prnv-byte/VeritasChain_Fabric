@@ -313,7 +313,6 @@ function OrgCard({ org, isActive, isPending, isOutgoing, onConnect }) {
         <p className="text-white/70 text-sm capitalize">{org.type}</p>
       </div>
       <div className="space-y-2 mb-4">
-        <InfoLine label="MSP ID" value={org.mspId} />
         <InfoLine label="Status" value={org.fabricStatus} />
         <InfoLine label="Description" value={org.whatTheyMake} />
       </div>

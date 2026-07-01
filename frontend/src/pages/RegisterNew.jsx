@@ -160,15 +160,15 @@ export function RegisterPage() {
 
             <div>
               <label className="block text-white/80 text-sm font-medium mb-2">
-                Address *
+                Registered Office Address *
               </label>
-              <GlassmorphicTextarea
-                placeholder="Business address..."
+              <GlassmorphicInput
+                type="text"
+                placeholder="e.g. 123 Business Avenue, Bengaluru, Karnataka 560001"
                 value={formData.address}
                 onChange={(e) => handleInputChange('address', e.target.value)}
                 error={!!errors.address}
                 errorMessage={errors.address}
-                rows={2}
               />
             </div>
           </motion.div>
@@ -268,7 +268,7 @@ export function RegisterPage() {
               <ReviewField label="Organization Name" value={formData.name} />
               <ReviewField label="Type" value={formData.type} />
               <ReviewField label="Description" value={formData.whatTheyMake} />
-              <ReviewField label="Address" value={formData.address} />
+              <ReviewField label="Registered Office Address" value={formData.address} />
               <ReviewField label="Contact" value={formData.contact} />
               <ReviewField label="Email" value={formData.email} />
             </div>
